@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "722166180360",
+    "project_id": "gundam-shop-app",
+    "storage_bucket": "gundam-shop-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:722166180360:android:3ad778a812c744d710bfbd",
+        "android_client_info": {
+          "package_name": "com.example.storepromax"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDChoiAwIa71FAVCMctpLvpRJnb0xbTN10"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
