@@ -43,4 +43,22 @@ class MainViewModel @Inject constructor(
         userListener?.remove()
         userListener = null
     }
+    // Trong MainViewModel.kt
+
+    fun logout(onSuccess: () -> Unit) {
+        val uid = auth.currentUser?.uid
+        if (uid != null) {
+            firestore.collection("users").document(uid)
+                .update("fcmToken", "")
+                .addOnCompleteListener {
+                    stopMonitoring()
+                    auth.signOut()
+                    onSuccess()
+                }
+        } else {
+            stopMonitoring()
+            auth.signOut()
+            onSuccess()
+        }
+    }
 }

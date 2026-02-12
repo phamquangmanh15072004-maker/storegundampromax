@@ -338,7 +338,7 @@ fun OrderSuccessDialog(
         },
         text = {
             Text(
-                text = "Đơn hàng của bạn đã được tiếp nhận.\nHệ thống đang chuẩn bị vật phẩm để xuất kích!",
+                text = "Đơn hàng của bạn đã được tiếp nhận.\nHệ thống đang chuẩn bị vật phẩm để vận chuyển!",
                 color = Color.LightGray,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
@@ -367,13 +367,14 @@ fun OrderSuccessDialog(
 fun CheckoutScreen(
     navController: NavController,
     viewModel: CheckoutViewModel = hiltViewModel(),
+
     productId: String? = null,
     quantity: Int? = null
 ) {
     val selectedItems by viewModel.selectedItems.collectAsState()
     val totalPrice by viewModel.totalPrice.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
-
+    val context = LocalContext.current
     val name by viewModel.name.collectAsState()
     val phone by viewModel.phone.collectAsState()
     val paymentMethod by viewModel.paymentMethod.collectAsState()
@@ -485,7 +486,6 @@ fun CheckoutScreen(
                 }
             }
 
-            // 2. Sản phẩm
             item {
                 SectionCard("Sản phẩm") {
                     selectedItems.forEach { item ->
@@ -500,7 +500,6 @@ fun CheckoutScreen(
                 }
             }
 
-            // 3. Phương thức thanh toán
             item {
                 SectionCard("Phương thức thanh toán") {
                     PaymentOptionItem("Thanh toán khi nhận hàng (COD)", Icons.Default.Money, paymentMethod == "COD") { viewModel.onPaymentMethodChange("COD") }
@@ -508,8 +507,6 @@ fun CheckoutScreen(
                     PaymentOptionItem("Chuyển khoản ngân hàng (QR)", Icons.Default.QrCode, paymentMethod == "BANKING") { viewModel.onPaymentMethodChange("BANKING") }
                 }
             }
-
-            // 4. Chi tiết thanh toán
             item {
                 SectionCard("Chi tiết thanh toán") {
                     BillRow("Tổng tiền hàng", totalPrice)
@@ -517,7 +514,7 @@ fun CheckoutScreen(
                     Divider(modifier = Modifier.padding(vertical = 8.dp), color = Color(0xFFEEEEEE))
                     BillRow("Tổng thanh toán", totalPrice + 30000, isTotal = true)
                 }
-                Spacer(modifier = Modifier.height(80.dp)) // Để tránh bị che bởi BottomBar
+                Spacer(modifier = Modifier.height(80.dp))
             }
         }
     }

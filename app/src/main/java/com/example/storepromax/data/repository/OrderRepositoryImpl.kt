@@ -42,17 +42,11 @@ class OrderRepositoryImpl @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
-    override suspend fun createOrder(order: Order): Result<Boolean> {
+    override suspend fun createOrder(order: Order): Result<String> {
         return try {
-            val newDocRef = firestore.collection("orders").document()
-
-            val finalOrder = order.copy(id = newDocRef.id)
-
-            newDocRef.set(finalOrder).await()
-
-            Result.success(true)
+            val documentRef = firestore.collection("orders").add(order).await()
+            Result.success(documentRef.id)
         } catch (e: Exception) {
-            e.printStackTrace()
             Result.failure(e)
         }
     }

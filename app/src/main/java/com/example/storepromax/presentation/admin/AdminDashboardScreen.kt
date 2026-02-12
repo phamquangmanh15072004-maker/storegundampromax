@@ -1,5 +1,6 @@
 package com.example.storepromax.presentation.admin
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -26,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.example.storepromax.presentation.navigation.Screen
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.messaging.FirebaseMessaging
 
 data class AdminMenuItem(
     val title: String,
@@ -51,7 +54,16 @@ fun AdminDashboardScreen(
         AdminMenuItem("Thống Kê", Icons.Default.PieChart, Color(0xFFC2185B), "admin_stats"),
         AdminMenuItem("CSKH", Icons.Default.SupportAgent, Color(0xFF0097A7),"admin_chat_list"),
     )
-
+    LaunchedEffect(Unit) {
+        FirebaseMessaging.getInstance().subscribeToTopic("admin_notifications")
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    Log.d("FCM_Admin", "Đã đăng ký nhận đơn hàng thành công!")
+                } else {
+                    Log.e("FCM_Admin", "Đăng ký thất bại", task.exception)
+                }
+            }
+    }
     Scaffold(
         topBar = {
             TopAppBar(

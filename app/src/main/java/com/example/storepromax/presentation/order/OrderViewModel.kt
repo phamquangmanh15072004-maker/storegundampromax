@@ -1,7 +1,9 @@
 package com.example.storepromax.presentation.order
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.storepromax.admin.utils.NotificationHelper
 import com.example.storepromax.domain.model.Order
 import com.example.storepromax.domain.repository.OrderRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +31,21 @@ class OrderViewModel @Inject constructor(
                 orderRepository.cancelOrder(orderId)
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+    }
+    fun placeOrder(order: Order, context: Context) {
+        viewModelScope.launch {
+            val result = orderRepository.createOrder(order)
+            result.onSuccess { newOrderId ->
+                NotificationHelper.sendOrderNotificationToAdmin(
+                    context = context,
+                    orderId = newOrderId,
+                    totalAmount = order.totalPrice.toDouble()
+                )
+            }
+
+            result.onFailure { exception ->
             }
         }
     }

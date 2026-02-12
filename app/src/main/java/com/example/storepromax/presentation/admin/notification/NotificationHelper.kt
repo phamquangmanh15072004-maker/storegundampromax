@@ -94,4 +94,47 @@ object NotificationHelper {
             println("Lỗi gửi FCM v1: ${e.message}")
         }
     }
+    suspend fun sendOrderNotificationToAdmin(
+        context: Context,
+        orderId: String,
+        totalAmount: Double
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val accessToken = getAccessToken(context)
+
+            val message = JSONObject()
+            val notification = JSONObject()
+            val data = JSONObject()
+
+            notification.put("title", "Có đơn hàng mới! 🤑")
+            notification.put("body", "Đơn hàng #$orderId trị giá ${totalAmount.toLong()}đ đang chờ duyệt.")
+
+            data.put("type", "NEW_ORDER")
+            data.put("orderId", orderId)
+
+            message.put("topic", "admin_notifications")
+            message.put("notification", notification)
+            message.put("data", data)
+
+            val finalJson = JSONObject()
+            finalJson.put("message", message)
+            val client = OkHttpClient()
+            val requestBody = finalJson.toString()
+                .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+            val request = Request.Builder()
+                .url(FCM_URL)
+                .addHeader("Authorization", "Bearer $accessToken")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
+
+            val response = client.newCall(request).execute()
+            println("Gửi Admin thành công: ${response.body?.string()}")
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            println("Lỗi gửi Admin: ${e.message}")
+        }
+    }
 }

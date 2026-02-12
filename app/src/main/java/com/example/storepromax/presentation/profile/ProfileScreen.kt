@@ -295,15 +295,11 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(32.dp))
             OutlinedButton(
                 onClick = {
-                    mainViewModel.stopMonitoring()
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(0) { inclusive = true }
+                    mainViewModel.logout {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
                     }
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        try {
-                            auth.signOut()
-                        } catch (e: Exception) { }
-                    }, 500)
                 },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 shape = RoundedCornerShape(12.dp),
