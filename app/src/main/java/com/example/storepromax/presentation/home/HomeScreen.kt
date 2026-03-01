@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -50,7 +51,9 @@ fun HomeScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     var productToAddToCart by remember { mutableStateOf<Product?>(null) }
-
+    LaunchedEffect(Unit) {
+        viewModel.loadProducts()
+    }
     Scaffold(
         containerColor = BgColor,
         floatingActionButton = {
@@ -59,10 +62,15 @@ fun HomeScreen(
     ) { paddingValues ->
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(bottom = 100.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(
+                top = 12.dp,
+                bottom = 100.dp
+            ),
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
+                .padding(paddingValues)
         ) {
             item(span = { GridItemSpan(2) }) {
                 Column {
@@ -89,6 +97,7 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
@@ -96,7 +105,13 @@ fun HomeScreen(
                                 ProductItem(
                                     product = product,
                                     modifier = Modifier.width(160.dp),
-                                    onClick = { navController.navigate(Screen.Detail.createRoute(product.id)) },
+                                    onClick = {
+                                        navController.navigate(
+                                            Screen.Detail.createRoute(
+                                                product.id
+                                            )
+                                        )
+                                    },
                                     onAddToCart = { productToAddToCart = product }
                                 )
                             }
@@ -111,7 +126,12 @@ fun HomeScreen(
             }
             if (isLoading) {
                 item(span = { GridItemSpan(2) }) {
-                    Box(modifier = Modifier.height(200.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .height(200.dp)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
                         CircularProgressIndicator(color = GunplaBlue)
                     }
                 }
@@ -119,19 +139,23 @@ fun HomeScreen(
                 if (productList.isEmpty()) {
                     item(span = { GridItemSpan(2) }) { EmptyStateMessage() }
                 } else {
-                    items(productList.size) { index ->
-                        val product = productList[index]
-                        val paddingStart = if (index % 2 == 0) 16.dp else 6.dp
-                        val paddingEnd = if (index % 2 == 0) 6.dp else 16.dp
-
+                    itemsIndexed(productList) { index, product ->
                         Box(
                             modifier = Modifier
-                                .padding(start = paddingStart, end = paddingEnd, bottom = 12.dp)
+                                .fillMaxWidth()
+                                .padding(
+                                    start = if (index % 2 == 0) 8.dp else 0.dp,
+                                    end = if (index % 2 == 0) 4.dp else 8.dp
+                                )
                         ) {
                             ProductItem(
                                 product = product,
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = { navController.navigate(Screen.Detail.createRoute(product.id)) },
+                                onClick = {
+                                    navController.navigate(
+                                        Screen.Detail.createRoute(product.id)
+                                    )
+                                },
                                 onAddToCart = { productToAddToCart = product }
                             )
                         }
@@ -211,14 +235,23 @@ fun BannerSection() {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))))
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.6f)
+                            )
+                        )
+                    )
             )
             Text(
                 text = "NEW ARRIVALS\nGUNDAM AERIAL",
                 color = Color.White,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 20.sp,
-                modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp)
             )
         }
     }
@@ -252,26 +285,69 @@ fun CategoryChip(text: String, isSelected: Boolean, onClick: () -> Unit) {
     val backgroundColor = if (isSelected) GunplaBlue else Color.White
     val textColor = if (isSelected) Color.White else Color.Gray
     val borderColor = if (isSelected) GunplaBlue else Color(0xFFE0E0E0)
-    Surface(modifier = Modifier.clickable { onClick() }.height(40.dp), shape = RoundedCornerShape(20.dp), color = backgroundColor, border = androidx.compose.foundation.BorderStroke(1.dp, borderColor), shadowElevation = if(isSelected) 4.dp else 0.dp) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp)) {
-            if (text == "3D Model") { Icon(Icons.Default.ViewInAr, null, tint = textColor, modifier = Modifier.size(16.dp)); Spacer(modifier = Modifier.width(6.dp)) }
-            Text(text, color = textColor, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, fontSize = 14.sp)
+    Surface(
+        modifier = Modifier
+            .clickable { onClick() }
+            .height(40.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = backgroundColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor),
+        shadowElevation = if (isSelected) 4.dp else 0.dp
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        ) {
+            if (text == "3D Model") {
+                Icon(
+                    Icons.Default.ViewInAr,
+                    null,
+                    tint = textColor,
+                    modifier = Modifier.size(16.dp)
+                ); Spacer(modifier = Modifier.width(6.dp))
+            }
+            Text(
+                text,
+                color = textColor,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                fontSize = 14.sp
+            )
         }
     }
 }
 
 @Composable
 fun SectionTitle(title: String, onSeeAll: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(title.uppercase(), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = GunplaBlue)
-        Text("Xem tất cả", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.clickable { onSeeAll() })
+        Text(
+            "Xem tất cả",
+            fontSize = 12.sp,
+            color = Color.Gray,
+            modifier = Modifier.clickable { onSeeAll() })
     }
 }
 
 @Composable
 fun EmptyStateMessage() {
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.Search, null, tint = Color.LightGray, modifier = Modifier.size(60.dp)); Spacer(modifier = Modifier.height(8.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            Icons.Default.Search,
+            null,
+            tint = Color.LightGray,
+            modifier = Modifier.size(60.dp)
+        ); Spacer(modifier = Modifier.height(8.dp))
         Text("Không tìm thấy sản phẩm nào", color = Color.Gray)
     }
 }

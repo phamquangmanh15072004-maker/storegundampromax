@@ -46,7 +46,6 @@ fun ProductItem(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(6.dp)
             .shadow(
                 elevation = 6.dp,
                 shape = RoundedCornerShape(16.dp),
@@ -55,7 +54,7 @@ fun ProductItem(
             .clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp) // Tắt elevation mặc định để dùng shadow custom
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column {
             Box(
@@ -82,7 +81,12 @@ fun ProductItem(
                                 .background(Color.Black, CircleShape)
                                 .padding(horizontal = 12.dp, vertical = 8.dp)
                         ) {
-                            Text("SOLD OUT", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                            Text(
+                                "SOLD OUT",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
                         }
                     }
                 }
@@ -98,7 +102,10 @@ fun ProductItem(
                             modifier = Modifier
                                 .background(
                                     brush = Brush.horizontalGradient(
-                                        colors = listOf(Color(0xFFFF512F), Color(0xFFDD2476)) // Gradient Cam Đỏ -> Hồng Tím
+                                        colors = listOf(
+                                            Color(0xFFFF512F),
+                                            Color(0xFFDD2476)
+                                        ) // Gradient Cam Đỏ -> Hồng Tím
                                     )
                                 )
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -124,7 +131,10 @@ fun ProductItem(
                             modifier = Modifier
                                 .background(
                                     brush = Brush.linearGradient(
-                                        colors = listOf(Color(0xFF00B4DB), Color(0xFF0083B0)) // Gradient Xanh biển
+                                        colors = listOf(
+                                            Color(0xFF00B4DB),
+                                            Color(0xFF0083B0)
+                                        ) // Gradient Xanh biển
                                     )
                                 )
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -144,8 +154,7 @@ fun ProductItem(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(12.dp)
-                    .height(115.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+                    .wrapContentHeight()
             ) {
                 Column {
                     Text(
@@ -169,7 +178,7 @@ fun ProductItem(
                         )
                         Spacer(modifier = Modifier.width(2.dp))
                         Text(
-                            text = "${product.rating}",
+                            text = String.format("%.1f", product.rating),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.Gray
@@ -184,40 +193,48 @@ fun ProductItem(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    verticalAlignment = Alignment.Bottom
                 ) {
-                    Column {
-                        if (discountPercent > 0 && !isOutOfStock) {
-                            Text(
-                                text = "₫${currencyFormatter.format(product.originalPrice)}",
-                                fontSize = 11.sp,
-                                color = Color.Gray,
-                                textDecoration = TextDecoration.LineThrough
-                            )
-                        }
+
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+
+                        Text(
+                            text ="₫${currencyFormatter.format(product.originalPrice)}",
+                            fontSize = 11.sp,
+                            color = Color.Gray,
+                            textDecoration = TextDecoration.LineThrough,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
                         Text(
                             text = "₫${currencyFormatter.format(product.price)}",
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 17.sp, // Tăng kích thước
-                            color = if (isOutOfStock) Color.Gray else Color(0xFFE91E63)
+                            fontSize = 17.sp,
+                            color = if (isOutOfStock) Color.Gray else Color(0xFFE91E63),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     if (!isOutOfStock) {
                         Surface(
                             shape = CircleShape,
                             color = Color(0xFF212121),
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(36.dp)
                                 .clickable { onAddToCart() }
-                                .shadow(4.dp, CircleShape)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Rounded.AddShoppingCart,
                                     contentDescription = "Add to cart",
                                     tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }

@@ -40,34 +40,31 @@ import java.nio.charset.StandardCharsets
 fun DetailScreen(
     navController: NavController,
     viewModel: DetailViewModel = hiltViewModel(),
-    wishlistViewModel: WishlistViewModel = hiltViewModel() // Inject thêm cái này để xử lý Tim
+    wishlistViewModel: WishlistViewModel = hiltViewModel()
 ) {
-    // State cơ bản
     var isBuyNowAction by remember { mutableStateOf(false) }
     var showAddToCartSheet by remember { mutableStateOf(false) }
 
-    // Data từ DetailViewModel
     val product = viewModel.state.value
     val isLoading = viewModel.isLoading.value
     val reviews = viewModel.reviews.value
     val userRating = viewModel.userRating.intValue
 
-    // Data từ WishlistViewModel (Lấy list ID đã thích)
     val wishlistIds by wishlistViewModel.wishlistIds.collectAsState()
 
-    // Context & Colors
     val context = LocalContext.current
     val gundamBlue = Color(0xFF0074D9)
     val gundamRed = Color(0xFFFF4136)
     val warningYellow = Color(0xFFFFDC00)
     val darkMetal = Color(0xFF111111)
-
+    val averageRating by viewModel.averageRating
+    val totalRatings by viewModel.totalRatingsCount
+    val currentUserId = viewModel.currentUserId
     if (isLoading || product == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = gundamBlue)
         }
     } else {
-        // Kiểm tra xem sản phẩm này có đang được thích không
         val isFavorite = wishlistIds.contains(product.id)
 
         Scaffold(
@@ -93,7 +90,6 @@ fun DetailScreen(
                     .padding(paddingValues)
                     .verticalScroll(rememberScrollState())
             ) {
-                // SLIDER ẢNH (Có nút Tim ở đây)
                 ProductImageSlider(
                     product = product,
                     navController = navController,
@@ -102,7 +98,6 @@ fun DetailScreen(
                 )
 
                 Column(modifier = Modifier.padding(16.dp)) {
-                    // TAG & RATING
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TechTag(text = product.category, color = gundamBlue)
                         if (product.isNew) {
@@ -111,12 +106,12 @@ fun DetailScreen(
                         }
                         Spacer(modifier = Modifier.weight(1f))
                         Icon(Icons.Filled.Star, contentDescription = null, tint = warningYellow, modifier = Modifier.size(20.dp))
-                        Text(text = "${product.rating} (${product.sold} sold)", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(text = String.format("%.1f", averageRating))
+                        Text(text = "(${product.sold} sold)", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // TÊN SẢN PHẨM
                     Text(
                         text = product.name,
                         fontSize = 24.sp,
@@ -127,7 +122,6 @@ fun DetailScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // GIÁ TIỀN
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
                             text = "₫${product.price}",
@@ -148,8 +142,6 @@ fun DetailScreen(
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
-
-                    // NÚT 3D
                     if (!product.model3DUrl.isNullOrEmpty()) {
                         Button3D(onClick = {
                             val encodedUrl = URLEncoder.encode(product.model3DUrl, StandardCharsets.UTF_8.toString())
@@ -157,20 +149,16 @@ fun DetailScreen(
                         })
                         Spacer(modifier = Modifier.height(24.dp))
                     }
-
-                    // THÔNG SỐ KỸ THUẬT
                     TechSpecsSection(product)
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // MÔ TẢ (Có thu gọn)
                     ExpandableDescription(product.description)
 
                     Spacer(modifier = Modifier.height(32.dp))
                     Divider(color = Color.LightGray, thickness = 1.dp)
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // BÌNH LUẬN
                     Text(
                         text = "ĐÁNH GIÁ TỪ CỘNG ĐỒNG",
                         fontSize = 16.sp,
@@ -179,25 +167,20 @@ fun DetailScreen(
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                     )
                     ReviewSection(
+                        currentUserId = currentUserId,
+                        averageRating = averageRating,
+                        totalRatings = totalRatings,
                         reviews = reviews,
                         currentUserRating = userRating,
                         onCommentSubmit = { content, parentId, rating ->
                             viewModel.submitComment(content, parentId, rating)
                         },
-                        onDeleteComment = { reviewId ->
-                            viewModel.deleteComment(reviewId)
-                            Toast.makeText(context, "Xóa Bình Luận thành công!!!", Toast.LENGTH_SHORT).show()
-                        },
-                        onEditComment = { reviewId, newContent ->
-                            viewModel.editComment(reviewId, newContent)
-                            Toast.makeText(context, "Sửa Bình Luận thành công!!!", Toast.LENGTH_SHORT).show()
-                        }
+                        onDeleteComment = { viewModel.deleteComment(it) },
+                        onEditComment = { id, content -> viewModel.editComment(id, content) }
                     )
                     Spacer(modifier = Modifier.height(80.dp))
                 }
             }
-
-            // BOTTOM SHEET MUA HÀNG
             if (showAddToCartSheet) {
                 AddToCartSheet(
                     product = product,
@@ -219,7 +202,6 @@ fun DetailScreen(
     }
 }
 
-// --- CÁC COMPONENT CON ĐÃ TỐI ƯU ---
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

@@ -7,6 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.storepromax.data.local.UserPreferences
 import com.example.storepromax.domain.repository.AuthRepository
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -50,10 +53,17 @@ class LoginViewModel @Inject constructor(
                             val reason = if (user.lockReason.isNotEmpty()) "\nLý do: ${user.lockReason}" else ""
                             _loginState.value = LoginState.Error("Tài khoản của bạn đã bị vô hiệu hóa.$reason")
                         } else {
-
                             userPreferences.saveRememberInfo(email.value, isRemember.value)
 
+                            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                                if (task.isSuccessful) {
+                                    val token = task.result
+                                    FirebaseFirestore.getInstance().collection("users").document(userId)
+                                        .set(mapOf("fcmToken" to token), SetOptions.merge())
+                                }
+                            }
                             if (user.role == "ADMIN") {
+                                FirebaseMessaging.getInstance().subscribeToTopic("admin_notifications")
                                 _loginState.value = LoginState.Success("admin")
                             } else {
                                 _loginState.value = LoginState.Success("user")

@@ -1,13 +1,18 @@
 package com.example.storepromax
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 @HiltViewModel
@@ -43,20 +48,31 @@ class MainViewModel @Inject constructor(
         userListener?.remove()
         userListener = null
     }
-    // Trong MainViewModel.kt
 
     fun logout(onSuccess: () -> Unit) {
-        val uid = auth.currentUser?.uid
-        if (uid != null) {
-            firestore.collection("users").document(uid)
-                .update("fcmToken", "")
-                .addOnCompleteListener {
-                    stopMonitoring()
+        val auth = FirebaseAuth.getInstance()
+        val firestore = FirebaseFirestore.getInstance()
+        val userId = auth.currentUser?.uid
+
+        if (userId != null) {
+            viewModelScope.launch {
+                try {
+                    firestore.collection("users").document(userId)
+                        .update("fcmToken", FieldValue.delete())
+                        .await()
+                    FirebaseMessaging.getInstance().unsubscribeFromTopic("admin_notifications").await()
+
+                    // 3. Đăng xuất Auth
+                    auth.signOut()
+                    onSuccess()
+
+                } catch (e: Exception) {
+                    e.printStackTrace()
                     auth.signOut()
                     onSuccess()
                 }
+            }
         } else {
-            stopMonitoring()
             auth.signOut()
             onSuccess()
         }

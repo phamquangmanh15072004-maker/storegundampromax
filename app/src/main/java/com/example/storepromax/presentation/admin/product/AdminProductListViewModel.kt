@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.storepromax.domain.model.Product
 import com.example.storepromax.domain.repository.ProductRepository
+import com.opencsv.CSVReader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,46 +70,45 @@ class AdminProductListViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val inputStream = context.contentResolver.openInputStream(uri)
-                val reader = BufferedReader(InputStreamReader(inputStream))
-
-                var line: String? = reader.readLine()
-
+                val csvReader = CSVReader(InputStreamReader(inputStream))
+                val rows = csvReader.readAll()
                 var successCount = 0
-                while (reader.readLine().also { line = it } != null) {
-                    val tokens = line!!.split(",")
-                    if (tokens.size >= 5) {
-                        val name = tokens[0].trim()
-                        val category = tokens[1].trim()
-                        val price = tokens[2].trim().toLongOrNull() ?: 0L
-                        val originalPrice = tokens[3].trim().toLongOrNull() ?: 0L
-                        val stock = tokens[4].trim().toIntOrNull() ?: 0
+                for (i in 1 until rows.size) {
+                    val tokens = rows[i]
 
-                        val description = if (tokens.size > 5) tokens[5].trim() else ""
-                        val imageUrl = if (tokens.size > 6) tokens[6].trim() else ""
+                    val name = tokens[0].trim()
+                    val category = tokens[1].trim()
+                    val price = tokens[2].trim().toLongOrNull() ?: 0L
+                    val originalPrice = tokens[3].trim().toLongOrNull() ?: 0L
+                    val stock = tokens[4].trim().toIntOrNull() ?: 0
+                    val description = tokens[5].trim()
+                    val imagesString = tokens[6].trim()
 
-                        val product = Product(
-                            name = name,
-                            category = category,
-                            price = price,
-                            originalPrice = originalPrice,
-                            stock = stock,
-                            description = description,
-                            imageUrl = imageUrl,
-                            isNew = true,
-                            isActive = true
-                        )
-                        productRepository.addProduct(product)
-                        successCount++
-                    }
+                    val imagesList = imagesString
+                        .split("|")
+                        .map { it.trim() }
+
+                    val product = Product(
+                        name = name,
+                        category = category,
+                        price = price,
+                        originalPrice = originalPrice,
+                        stock = stock,
+                        description = description,
+                        imageUrl = imagesList.firstOrNull() ?: "",
+                        images = imagesList,
+                        isNew = true,
+                        isActive = true
+                    )
+
+                    productRepository.addProduct(product)
+                    successCount++
                 }
 
-                reader.close()
-                loadProducts()
-                Toast.makeText(context, "Đã import thành công $successCount sản phẩm!", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Đã import $successCount sản phẩm!", Toast.LENGTH_LONG).show()
 
             } catch (e: Exception) {
                 e.printStackTrace()
-                Toast.makeText(context, "Lỗi đọc file: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }

@@ -37,7 +37,7 @@ class HomeViewModel @Inject constructor(
         loadProducts()
     }
 
-    private fun loadProducts() {
+    fun loadProducts() {
         viewModelScope.launch {
             _isLoading.value = true
             productRepository.getProducts().onSuccess { list ->

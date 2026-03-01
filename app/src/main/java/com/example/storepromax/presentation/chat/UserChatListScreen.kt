@@ -43,11 +43,6 @@ fun UserChatListScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Tin nhắn", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = null)
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         },

@@ -1,6 +1,7 @@
 package com.example.storepromax.admin.utils
 
 import android.content.Context
+import android.util.Log
 import com.google.auth.oauth2.GoogleCredentials
 import com.example.storepromax.R
 import kotlinx.coroutines.Dispatchers
@@ -135,6 +136,85 @@ object NotificationHelper {
         } catch (e: Exception) {
             e.printStackTrace()
             println("Lỗi gửi Admin: ${e.message}")
+        }
+    }
+    suspend fun sendChatNotification(
+        context: Context,
+        receiverToken: String,
+        senderName: String,
+        messageContent: String,
+        channelId: String
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val accessToken = getAccessToken(context)
+
+            val message = JSONObject()
+            val data = JSONObject()
+
+            data.put("title", "Tin nhắn từ $senderName")
+            data.put("body", messageContent)
+            data.put("type", "CHAT")
+            data.put("channelId", channelId)
+
+            message.put("token", receiverToken)
+            message.put("data", data)
+
+            val finalJson = JSONObject().apply { put("message", message) }
+
+            val client = OkHttpClient()
+            val requestBody = finalJson.toString()
+                .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+            val request = Request.Builder()
+                .url(FCM_URL)
+                .addHeader("Authorization", "Bearer $accessToken")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
+
+            val response = client.newCall(request).execute()
+            Log.d("FCM_CHECK", "4. FIREBASE TRẢ VỀ: ${response.body?.string()}")
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Log.e("FCM_CHECK", "❌ LỖI API GOOGLE: ${e.message}")
+        }
+    }
+    suspend fun sendChatNotificationToAdmin(
+        context: Context,
+        senderName: String,
+        messageContent: String,
+        channelId: String
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val accessToken = getAccessToken(context)
+            val message = JSONObject()
+            val data = JSONObject() // 👉 CHỈ DÙNG DATA
+
+            data.put("title", "Tin nhắn mới từ $senderName 💬")
+            data.put("body", messageContent)
+            data.put("type", "CHAT_ADMIN")
+            data.put("channelId", channelId)
+
+            message.put("topic", "admin_notifications")
+            message.put("data", data)
+            // 🔥 ĐÃ BỎ message.put("notification", notification)
+
+            val finalJson = JSONObject().apply { put("message", message) }
+            val client = OkHttpClient()
+            val requestBody = finalJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url(FCM_URL)
+                .addHeader("Authorization", "Bearer $accessToken")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
+
+            val response = client.newCall(request).execute()
+            Log.d("FCM_CHECK", "4. FIREBASE TRẢ VỀ ADMIN: ${response.body?.string()}")
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Log.e("FCM_CHECK", "❌ LỖI API GOOGLE (ADMIN): ${e.message}")
         }
     }
 }

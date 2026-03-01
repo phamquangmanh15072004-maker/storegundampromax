@@ -1,21 +1,26 @@
 package com.example.storepromax.presentation.chat
 
+import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cloudinary.android.MediaManager
 import com.cloudinary.android.callback.ErrorInfo
 import com.cloudinary.android.callback.UploadCallback
+import com.example.storepromax.admin.utils.NotificationHelper
 import com.example.storepromax.domain.model.ChatChannel
 import com.example.storepromax.domain.model.ChatMessage
 import com.example.storepromax.domain.repository.ChatRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import kotlin.coroutines.resume
 
@@ -28,7 +33,8 @@ data class UploadingMedia(
 class ChatDetailViewModel @Inject constructor(
     private val chatRepo: ChatRepository,
     private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -59,7 +65,45 @@ class ChatDetailViewModel @Inject constructor(
                 }
         }
     }
+    private suspend fun triggerPushNotification(content: String, isSenderAdmin: Boolean) {
+        try {
+            val channel = _currentChannel.value
+            if (channel == null) {
+                Log.e("FCM_CHECK", "❌ LỖI: channel đang bị NULL, bị ngắt ngang tại đây!")
+                return
+            }
+            val customerId = channel.userId
+            Log.d("FCM_CHECK", "2. Đã lấy được Channel. ID Khách: $customerId")
 
+            if (isSenderAdmin) {
+                val userDoc = firestore.collection("users").document(customerId).get().await()
+                val fcmToken = userDoc.getString("fcmToken")
+
+                if (!fcmToken.isNullOrEmpty()) {
+                    NotificationHelper.sendChatNotification(
+                        context = context,
+                        receiverToken = fcmToken,
+                        senderName = "CSKH StoreProMax",
+                        messageContent = content,
+                        channelId = channel.id
+                    )
+                } else {
+                    Log.e("FCM_CHECK", "❌ LỖI: Token của khách trống!")
+                }
+            } else {
+                val senderName = auth.currentUser?.displayName ?: "Khách hàng"
+                Log.d("FCM_CHECK", "3. Khách đang bắn thông báo lên Topic Admin")
+                NotificationHelper.sendChatNotificationToAdmin(
+                    context = context,
+                    senderName = senderName,
+                    messageContent = content,
+                    channelId = channel.id
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("FCM_CHECK", "❌ LỖI TRY-CATCH: ${e.message}")
+        }
+    }
     fun sendMessage(channelId: String, content: String, isSenderAdmin: Boolean) {
         if (content.isBlank()) return
         viewModelScope.launch {
@@ -70,6 +114,32 @@ class ChatDetailViewModel @Inject constructor(
                 mediaUrl = "",
                 isAdmin = isSenderAdmin
             )
+
+            triggerPushNotification(content, isSenderAdmin)
+        }
+    }
+
+    fun sendMedia(channelId: String, uri: Uri, isVideo: Boolean, isSenderAdmin: Boolean) {
+        viewModelScope.launch {
+            _uploadingMedia.value = UploadingMedia(uri, isVideo)
+            val url = uploadMediaToCloudinary(uri, isVideo)
+
+            if (url != null) {
+                val type = if (isVideo) "VIDEO" else "IMAGE"
+                val contentText = if (isVideo) "[Đã gửi một video 🎬]" else "[Đã gửi một ảnh 📸]"
+
+                // 1. Chờ gửi tin nhắn ảnh xong
+                chatRepo.sendMessage(
+                    channelId = channelId,
+                    content = contentText,
+                    type = type,
+                    mediaUrl = url,
+                    isAdmin = isSenderAdmin
+                )
+
+                triggerPushNotification(contentText, isSenderAdmin)
+            }
+            _uploadingMedia.value = null
         }
     }
 
@@ -103,28 +173,6 @@ class ChatDetailViewModel @Inject constructor(
         } catch (e: Exception) {
             e.printStackTrace()
             cont.resume(null)
-        }
-    }
-
-    fun sendMedia(channelId: String, uri: Uri, isVideo: Boolean, isSenderAdmin: Boolean) {
-        viewModelScope.launch {
-            _uploadingMedia.value = UploadingMedia(uri, isVideo)
-
-            val url = uploadMediaToCloudinary(uri, isVideo)
-
-            if (url != null) {
-                val type = if (isVideo) "VIDEO" else "IMAGE"
-                val contentText = if (isVideo) "[Đã gửi một video]" else "[Đã gửi một ảnh]"
-
-                chatRepo.sendMessage(
-                    channelId = channelId,
-                    content = contentText,
-                    type = type,
-                    mediaUrl = url,
-                    isAdmin = isSenderAdmin
-                )
-            }
-            _uploadingMedia.value = null
         }
     }
 }

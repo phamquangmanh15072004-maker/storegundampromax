@@ -97,7 +97,6 @@ fun AddProductScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // === 1. THÔNG TIN CƠ BẢN ===
                 AdminSectionCard("Thông tin cơ bản") {
                     OutlinedTextField(
                         value = viewModel.name.value,
@@ -109,7 +108,6 @@ fun AddProductScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Giá bán và Giá gốc (Cạnh nhau)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedTextField(
                             value = viewModel.price.value,

@@ -104,4 +104,5 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging-ktx:23.4.0")
     implementation("com.squareup.okhttp3:okhttp:4.10.0")
     implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
+    implementation("com.opencsv:opencsv:5.7.1")
 }

@@ -5,8 +5,10 @@ import androidx.room.Room
 import com.example.storepromax.data.local.AppDatabase
 import com.example.storepromax.data.local.dao.HistoryDao
 import com.example.storepromax.data.repository.CartRepositoryImpl
+import com.example.storepromax.data.repository.ReviewRepositoryImpl
 import com.example.storepromax.data.repository.UserRepositoryImpl
 import com.example.storepromax.domain.repository.CartRepository
+import com.example.storepromax.domain.repository.ReviewRepository
 import com.example.storepromax.domain.repository.UserRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -59,5 +61,13 @@ object AppModule {
     @Provides
     fun provideHistoryDao(database: AppDatabase): HistoryDao {
         return database.historyDao()
+    }
+    @Provides
+    @Singleton
+    fun provideReviewRepository(
+        firestore: FirebaseFirestore,
+        auth: FirebaseAuth
+    ): ReviewRepository {
+        return ReviewRepositoryImpl(firestore, auth)
     }
 }

@@ -41,11 +41,9 @@ fun AdminProductListScreen(
     val currentSearch by viewModel.searchQuery.collectAsState()
     val currentCategory by viewModel.selectedCategory.collectAsState()
 
-    // 🔥 State cho hộp thoại Xóa 1 sản phẩm
     var showDeleteSingleDialog by remember { mutableStateOf(false) }
     var productToDelete by remember { mutableStateOf<Product?>(null) }
 
-    // 🔥 State cho hộp thoại Xóa TẤT CẢ
     var showDeleteAllDialog by remember { mutableStateOf(false) }
 
     val categories = listOf("Tất cả", "HG", "RG", "MG", "PG", "SD", "ACCESSORY", "TOOL")
@@ -86,7 +84,6 @@ fun AdminProductListScreen(
                     }
                 },
                 actions = {
-                    // 1. Nút Import CSV
                     IconButton(onClick = { csvLauncher.launch("text/*") }) {
                         Icon(Icons.Default.UploadFile, contentDescription = "Import CSV", tint = Color(0xFF2E7D32))
                     }

@@ -233,7 +233,7 @@ fun ProfileScreen(
             ) {
                 Column {
                     ModernMenuItem(Icons.Default.Person, Color(0xFF2196F3), "Thông tin cá nhân") {
-                        navController.navigate("profile_detail")
+                        navController.navigate("profile_detail/${currentUser?.uid}")
                     }
                     ModernDivider()
                     ModernMenuItem(Icons.Default.LockReset, Color(0xFFE91E63), "Đổi mật khẩu") {

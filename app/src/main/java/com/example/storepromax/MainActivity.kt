@@ -64,7 +64,11 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.jar.Manifest
 
-data class DeepLinkData(val type: String?, val orderId: String?)
+data class DeepLinkData(
+    val type: String?,
+    val orderId: String? = null,
+    val channelId: String? = null
+)
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private var deepLinkData by mutableStateOf<DeepLinkData?>(null)
@@ -79,14 +83,33 @@ class MainActivity : ComponentActivity() {
                 val isBanned by mainViewModel.isUserBanned.collectAsState()
                 LaunchedEffect(deepLinkData) {
                     deepLinkData?.let { data ->
-                        if (data.type == "ORDER_UPDATE" && !data.orderId.isNullOrEmpty()) {
-                            try {
-                                navController.navigate("order_detail/${data.orderId}")
-                                deepLinkData = null
-                            } catch (e: Exception) {
-                                e.printStackTrace()
+                        try {
+                            when (data.type) {
+                                "ORDER_UPDATE" -> {
+                                    if (!data.orderId.isNullOrEmpty()) {
+                                        navController.navigate("order_detail/${data.orderId}")
+                                    }
+                                }
+                                "CHAT" -> {
+                                    if (!data.channelId.isNullOrEmpty()) {
+                                        navController.navigate("chat_detail/${data.channelId}")
+                                    }
+                                }
+                                "CHAT_ADMIN" -> {
+                                    if (!data.channelId.isNullOrEmpty()) {
+                                        navController.navigate("admin_chat_detail/${data.channelId}")
+                                    }
+                                }
                             }
+                            deepLinkData = null
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
+                    }
+                }
+                LaunchedEffect(currentUser) {
+                    if (currentUser != null) {
+                        saveFCMTokenToFirestore()
                     }
                 }
                 if(currentUser != null){
@@ -349,9 +372,10 @@ class MainActivity : ComponentActivity() {
         intent?.extras?.let { bundle ->
             val type = bundle.getString("type")
             val orderId = bundle.getString("orderId")
+            val channelId = bundle.getString("channelId")
 
-            if (type != null && orderId != null) {
-                deepLinkData = DeepLinkData(type, orderId)
+            if (type != null) {
+                deepLinkData = DeepLinkData(type, orderId, channelId)
             }
         }
     }
