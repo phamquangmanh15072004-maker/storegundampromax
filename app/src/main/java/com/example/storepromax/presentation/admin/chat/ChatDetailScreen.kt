@@ -2,6 +2,7 @@ package com.example.storepromax.presentation.chat
 
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -172,8 +173,8 @@ fun ChatDetailScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(messages) { msg ->
-                val isMe = if (isAdminView) msg.isAdmin
-                else msg.senderId == viewModel.currentUserId && !msg.isAdmin
+                val isMe = msg.senderId == viewModel.currentUserId
+                Log.d("Check","$isMe")
                 MessageBubble(
                     message = msg,
                     isMe = isMe,

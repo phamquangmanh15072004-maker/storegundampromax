@@ -1,5 +1,6 @@
 package com.example.storepromax.presentation.profile
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,6 +22,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,6 +46,7 @@ fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel(),
     mainViewModel: MainViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val auth = FirebaseAuth.getInstance()
     val currentUser = auth.currentUser
     val name = currentUser?.displayName ?: "Khách hàng thân thiết"
@@ -240,15 +243,7 @@ fun ProfileScreen(
                         navController.navigate("change_password")
                     }
                     ModernDivider()
-
-                    ModernMenuItem(Icons.Default.LocationOn, Color(0xFFFF5722), "Sổ địa chỉ") {
-                        navController.navigate("address_book")
-                    }
                     ModernDivider()
-
-                    ModernMenuItem(Icons.Default.CreditCard, Color(0xFF673AB7), "Thanh toán") {
-                        navController.navigate("payment_methods")
-                    }
                 }
             }
 
@@ -261,13 +256,9 @@ fun ProfileScreen(
             ) {
                 Column {
                     ModernMenuItem(Icons.Default.Notifications, Color(0xFFFFC107), "Thông báo") {
-                        navController.navigate("notifications")
+                        Toast.makeText(context, "Tính năng đang được phát triển!!!", Toast.LENGTH_SHORT).show()
                     }
                     ModernDivider()
-
-                    ModernMenuItem(Icons.Default.HeadsetMic, Color(0xFF009688), "Trung tâm hỗ trợ") {
-                        navController.navigate("support_center")
-                    }
                     ModernDivider()
                     ModernMenuItem(Icons.Default.Security, Color(0xFF607D8B), "Chính sách & Bảo mật") {
                         navController.navigate("privacy_policy")

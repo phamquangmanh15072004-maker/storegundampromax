@@ -24,7 +24,8 @@ data class Product(
     val sold: Int = 0,
     val sizes: List<String> = emptyList(),
     val colors: List<String> = emptyList(),
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val has3D: Boolean = false
 ) { fun getDiscountPercentage(): Int {
         if (originalPrice > 0 && price < originalPrice) {
             return ((originalPrice - price).toDouble() / originalPrice * 100).toInt()

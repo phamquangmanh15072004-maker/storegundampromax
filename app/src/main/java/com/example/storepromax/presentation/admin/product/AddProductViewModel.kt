@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.mutableStateOf
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cloudinary.android.MediaManager
@@ -15,6 +16,8 @@ import com.example.storepromax.domain.repository.ProductRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -29,10 +32,14 @@ import kotlin.coroutines.resumeWithException
 @HiltViewModel
 class AddProductViewModel @Inject constructor(
     private val productRepository: ProductRepository,
+    private val savedStateHandle: SavedStateHandle,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
-
-    // State UI
+    var productIdState = mutableStateOf<String?>(null)
+    val productId: String? = savedStateHandle["productId"]
+    val isEditMode = productId != null
+    var nameError = mutableStateOf<String?>(null)
+    var priceError = mutableStateOf<String?>(null)
     var name = mutableStateOf("")
     var description = mutableStateOf("")
     var price = mutableStateOf("")
@@ -56,7 +63,28 @@ class AddProductViewModel @Inject constructor(
 
     private val _uiEvent = Channel<String>()
     val uiEvent = _uiEvent.receiveAsFlow()
+    init {
+        productId?.let { loadProductById(it) }
+    }
+    private fun validateInputs(): Boolean {
+        var isValid = true
+        if (name.value.isBlank()) {
+            nameError.value = "Tên không được để trống"
+            isValid = false
+        } else nameError.value = null
 
+        val p = price.value.toLongOrNull() ?: 0
+        val op = originalPrice.value.toLongOrNull() ?: 0
+        if (p <= 0) {
+            priceError.value = "Giá bán phải lớn hơn 0"
+            isValid = false
+        } else if (p > op && op > 0) {
+            priceError.value = "Giá bán không nên lớn hơn giá gốc"
+            isValid = false
+        } else priceError.value = null
+
+        return isValid
+    }
     fun addImages(newUris: List<Uri>) {
         val current = selectedImages.value.toMutableList()
         current.addAll(newUris)
@@ -70,11 +98,11 @@ class AddProductViewModel @Inject constructor(
     }
 
     fun loadProductById(id: String) {
-        if (currentProductId == id) return
+        if (productIdState.value == id) return
         viewModelScope.launch {
             isLoading.value = true
             productRepository.getProductById(id).onSuccess { product ->
-                currentProductId = product.id
+                productIdState.value = product.id
                 name.value = product.name
                 description.value = product.description
                 price.value = product.price.toString()
@@ -121,78 +149,52 @@ class AddProductViewModel @Inject constructor(
     }
 
     fun saveProduct() {
-        if (name.value.isBlank() || price.value.isBlank()) {
-            viewModelScope.launch { _uiEvent.send("Thiếu thông tin cơ bản!") }
-            return
-        }
-
+        if (!validateInputs()) return
         viewModelScope.launch {
             isLoading.value = true
             try {
-                val finalUrls = mutableListOf<String>()
-                withContext(Dispatchers.IO) {
-                    selectedImages.value.forEach { uri ->
-                        val stringUri = uri.toString()
-                        if (stringUri.startsWith("http")) {
-                            finalUrls.add(stringUri)
-                        } else {
-                            val url = uploadOneImage(uri)
-                            if (url != null) {
-                                finalUrls.add(url)
-                            }
+                val finalUrls = withContext(Dispatchers.IO) {
+                    selectedImages.value.map { uri ->
+                        async {
+                            if (uri.toString().startsWith("http")) uri.toString()
+                            else uploadOneImage(uri)
                         }
-                    }
+                    }.awaitAll().filterNotNull()
                 }
 
                 if (finalUrls.isEmpty() && selectedImages.value.isNotEmpty()) {
-                    _uiEvent.send("Lỗi upload ảnh! Kiểm tra mạng.")
-                    isLoading.value = false
+                    _uiEvent.send("Không upload được ảnh!")
                     return@launch
                 }
-
-                // 2. Tạo object Product
-                val newProduct = Product(
-                    id = currentProductId ?: "",
+                val productToSave = Product(
+                    id = productId ?: "",
                     name = name.value,
                     description = description.value,
                     price = price.value.toLongOrNull() ?: 0,
                     originalPrice = originalPrice.value.toLongOrNull() ?: 0,
                     stock = stock.value.toIntOrNull() ?: 0,
                     category = category.value,
-
-                    // 🔥 Lấy giá trị chính xác từ State
                     isNew = isNew.value,
                     isActive = isActive.value,
-
-                    imageUrl = finalUrls.firstOrNull() ?: "", // Ảnh đầu tiên làm avatar
+                    imageUrl = finalUrls.firstOrNull() ?: "",
                     images = finalUrls,
-
-                    model3DUrl = if (model3DUrl.value.isBlank()) null else model3DUrl.value,
+                    model3DUrl = model3DUrl.value.ifBlank { null },
                     sizes = sizesInput.value.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                     colors = colorsInput.value.split(",").map { it.trim() }.filter { it.isNotEmpty() },
-
-                    // Giữ lại data cũ
-                    createdAt = if (currentProductId == null) System.currentTimeMillis() else existingCreatedAt,
-                    sold = if (currentProductId == null) 0 else existingSold,
-                    rating = if (currentProductId == null) 0.0 else existingRating
+                    createdAt = if (productIdState.value == null) System.currentTimeMillis() else existingCreatedAt,
+                    sold = if (productIdState.value == null) 0 else existingSold,
+                    rating = if (productIdState.value == null) 0.0 else existingRating
                 )
-
-                // 3. Lưu vào DB
-                val result = if (currentProductId == null) {
-                    productRepository.addProduct(newProduct)
+                val result = if (isEditMode) {
+                    productRepository.updateProduct(productToSave)
                 } else {
-                    productRepository.updateProduct(newProduct)
+                    productRepository.addProduct(productToSave)
                 }
 
-                if (result.isSuccess) {
-                    _uiEvent.send("Success")
-                } else {
-                    _uiEvent.send("Lỗi lưu DB: ${result.exceptionOrNull()?.message}")
-                }
-
+                if (result.isSuccess) _uiEvent.send("Success")
+                else _uiEvent.send("Lỗi: ${result.exceptionOrNull()?.message}")
             } catch (e: Exception) {
                 _uiEvent.send("Lỗi: ${e.message}")
-                e.printStackTrace()
             } finally {
                 isLoading.value = false
             }

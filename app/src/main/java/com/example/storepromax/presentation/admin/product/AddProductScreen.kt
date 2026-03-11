@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +34,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -102,8 +104,9 @@ fun AddProductScreen(
                         value = viewModel.name.value,
                         onValueChange = { viewModel.name.value = it },
                         label = { Text("Tên sản phẩm") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        isError = viewModel.nameError.value != null,
+                        supportingText = { viewModel.nameError.value?.let { Text(it) } },
+                        modifier = Modifier.fillMaxWidth()
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -143,8 +146,6 @@ fun AddProductScreen(
                         shape = RoundedCornerShape(8.dp)
                     )
                 }
-
-                // === 2. PHÂN LOẠI (DROPDOWN MENU) ===
                 AdminSectionCard("Phân loại") {
                     var expanded by remember { mutableStateOf(false) }
                     val categories = listOf("HG", "RG", "MG", "PG", "SD", "ACCESSORY", "TOOL")
@@ -180,14 +181,11 @@ fun AddProductScreen(
                         }
                     }
                 }
-
-                // === 3. HÌNH ẢNH (GIAO DIỆN ĐẸP) ===
                 AdminSectionCard("Hình ảnh (${viewModel.selectedImages.value.size})") {
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(vertical = 8.dp)
                     ) {
-                        // Nút thêm ảnh (Nét đứt)
                         item {
                             Box(
                                 modifier = Modifier
@@ -207,9 +205,7 @@ fun AddProductScreen(
                                 }
                             }
                         }
-
-                        // Danh sách ảnh đã chọn
-                        items(viewModel.selectedImages.value) { uri ->
+                        itemsIndexed(viewModel.selectedImages.value) { index,uri ->
                             Box(modifier = Modifier.size(100.dp)) {
                                 Image(
                                     painter = rememberAsyncImagePainter(uri),
@@ -220,7 +216,14 @@ fun AddProductScreen(
                                         .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp)),
                                     contentScale = ContentScale.Crop
                                 )
-                                // Nút xóa nhỏ gọn
+                                if (index == 0) {
+                                    Surface(
+                                        color = Color.Black.copy(alpha = 0.6f),
+                                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                                    ) {
+                                        Text("Ảnh chính", color = Color.White, fontSize = 10.sp, textAlign = TextAlign.Center)
+                                    }
+                                }
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
@@ -238,10 +241,7 @@ fun AddProductScreen(
                         }
                     }
                 }
-
-                // === 4. TRẠNG THÁI ===
                 AdminSectionCard("Trạng thái") {
-                    // Switch: Is New
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,

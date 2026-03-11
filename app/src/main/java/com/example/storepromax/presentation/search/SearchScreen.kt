@@ -2,6 +2,7 @@ package com.example.storepromax.presentation.search
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -11,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,11 +34,10 @@ import com.example.storepromax.presentation.navigation.Screen
 import com.example.storepromax.feature.product_detail.components.AddToCartSheet
 import com.example.storepromax.domain.model.Product
 
-// Màu chủ đạo (Đồng bộ với Home)
 val GunplaBlue = Color(0xFF0D47A1)
 val BgColor = Color(0xFFF8F9FA)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SearchScreen(
     navController: NavController,
@@ -45,6 +46,8 @@ fun SearchScreen(
     val query by viewModel.searchQuery.collectAsState()
     val results by viewModel.searchResults.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+
+    val searchHistory by viewModel.searchHistory.collectAsState()
 
     val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
@@ -79,17 +82,16 @@ fun SearchScreen(
                         placeholder = { Text("Nhập tên Gundam...", color = Color.Gray, fontSize = 14.sp) },
                         modifier = Modifier
                             .weight(1f)
-                            .height(50.dp)
+                            .heightIn(min = 48.dp)
                             .focusRequester(focusRequester),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.White,
                             unfocusedContainerColor = Color.White,
-                            focusedTextColor = Color.Black,
-                            cursorColor = GunplaBlue,
-                            focusedIndicatorColor = Color.Transparent, // Bỏ gạch chân
-                            unfocusedIndicatorColor = Color.Transparent
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            focusedLabelColor = Color.Transparent,
                         ),
-                        shape = RoundedCornerShape(25.dp), // Bo tròn dạng viên thuốc (Pill)
+                        shape = RoundedCornerShape(25.dp),
                         singleLine = true,
                         leadingIcon = {
                             Icon(Icons.Default.Search, contentDescription = null, tint = GunplaBlue)
@@ -112,12 +114,30 @@ fun SearchScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            if (isLoading) {
+            if (query.isEmpty()) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    if (searchHistory.isNotEmpty()) {
+                        SearchHistorySection(
+                            history = searchHistory,
+                            onItemClick = { viewModel.onQueryChange(it) },
+                            onRemoveItem = { viewModel.removeSearchHistoryItem(it) },
+                            onClearHistory = { viewModel.clearAllSearchHistory() }
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    } else {
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+
+                    PopularSearchesSection(
+                        onItemClick = { viewModel.onQueryChange(it) }
+                    )
+                }
+            } else if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
                     color = GunplaBlue
                 )
-            } else if (results.isEmpty() && query.isNotEmpty()) {
+            } else if (results.isEmpty()) {
                 Column(
                     modifier = Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -128,25 +148,11 @@ fun SearchScreen(
                             .background(Color.LightGray.copy(alpha = 0.3f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            tint = Color.Gray,
-                            modifier = Modifier.size(50.dp)
-                        )
+                        Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(50.dp))
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Không tìm thấy sản phẩm nào",
-                        color = Color.DarkGray,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 16.sp
-                    )
-                    Text(
-                        text = "Hãy thử từ khóa khác xem sao",
-                        color = Color.Gray,
-                        fontSize = 14.sp
-                    )
+                    Text(text = "Không tìm thấy sản phẩm nào", color = Color.DarkGray, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                    Text(text = "Hãy thử từ khóa khác xem sao", color = Color.Gray, fontSize = 14.sp)
                 }
             } else {
                 LazyVerticalGrid(
@@ -159,17 +165,17 @@ fun SearchScreen(
                         ProductItem(
                             product = product,
                             onClick = {
+                                viewModel.saveSearchQuery(query)
                                 navController.navigate(Screen.Detail.createRoute(product.id))
                             },
-                            onAddToCart = {
-                                productToAddToCart = product
-                            },
+                            onAddToCart = { productToAddToCart = product },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
             }
         }
+
         if (productToAddToCart != null) {
             AddToCartSheet(
                 product = productToAddToCart!!,
@@ -181,6 +187,113 @@ fun SearchScreen(
                     productToAddToCart = null
                 }
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SearchHistorySection(
+    history: List<String>,
+    onItemClick: (String) -> Unit,
+    onRemoveItem: (String) -> Unit,
+    onClearHistory: () -> Unit
+) {
+    if (history.isNotEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Lịch sử tìm kiếm",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Color.DarkGray
+                )
+                Text(
+                    text = "Xóa tất cả",
+                    color = Color.Gray,
+                    fontSize = 14.sp,
+                    modifier = Modifier.clickable { onClearHistory() }
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                history.forEach { item ->
+                    AssistChip(
+                        onClick = { onItemClick(item) },
+                        label = { Text(text = item, fontSize = 14.sp, color = Color.DarkGray) },
+                        leadingIcon = {
+                            Icon(Icons.Default.History, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                        },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Xóa",
+                                tint = Color.Gray,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { onRemoveItem(item) }
+                            )
+                        },
+                        colors = AssistChipDefaults.assistChipColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun PopularSearchesSection(
+    onItemClick: (String) -> Unit
+) {
+    val popularKeywords = listOf("Gundam HG", "Gundam MG", "Kìm cắt GodHand", "Gundam Aerial", "Panel Line", "Barbatos", "Action Base")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        Text(
+            text = "Tìm kiếm phổ biến 🔥",
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            color = GunplaBlue
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            popularKeywords.forEach { item ->
+                Surface(
+                    color = Color(0xFFF0F2F5),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.clickable { onItemClick(item) }
+                ) {
+                    Text(
+                        text = item,
+                        fontSize = 14.sp,
+                        color = Color.DarkGray,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+            }
         }
     }
 }

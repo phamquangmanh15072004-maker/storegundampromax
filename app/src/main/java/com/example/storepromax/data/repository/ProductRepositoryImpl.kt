@@ -4,7 +4,9 @@ import com.example.storepromax.data.local.dao.HistoryDao
 import com.example.storepromax.data.local.entity.HistoryEntity
 import com.example.storepromax.domain.model.Product
 import com.example.storepromax.domain.repository.ProductRepository
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
@@ -39,33 +41,37 @@ class ProductRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun searchProducts(query: String): Result<List<Product>> {
-        return try {
-            val snapshot = firestore.collection("products")
-                .whereGreaterThanOrEqualTo("name", query)
-                .whereLessThanOrEqualTo("name", query + "\uf8ff")
-                .get()
-                .await()
-
-            val products = snapshot.toObjects(Product::class.java)
-            Result.success(products)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
     override suspend fun addProduct(product: Product): Result<Boolean> {
         return try {
             val docRef = firestore.collection("products").document()
 
-            val finalProduct = product.copy(id = docRef.id)
+            val productMap = hashMapOf(
+                "id" to docRef.id,
+                "name" to product.name,
+                "name_lowercase" to product.name.lowercase(),
+                "price" to product.price,
+                "originalPrice" to product.originalPrice,
+                "description" to product.description,
+                "images" to product.images,
+                "imageUrl" to (product.images.firstOrNull() ?: ""),
+                "stock" to product.stock,
+                "category" to product.category,
+                "isNew" to product.isNew,
+                "isActive" to product.isActive,
+                "model3DUrl" to product.model3DUrl,
+                "has3D" to !product.model3DUrl.isNullOrBlank(),
+                "sold" to 0,
+                "rating" to 0.0,
+                "createdAt" to System.currentTimeMillis()
+            )
 
-            docRef.set(finalProduct).await()
-
+            docRef.set(productMap).await()
             Result.success(true)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
     override suspend fun deleteProduct(productId: String): Result<Boolean> {
         return try {
             firestore.collection("products").document(productId).delete().await()
@@ -74,14 +80,37 @@ class ProductRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+
     override suspend fun updateProduct(product: Product): Result<Boolean> {
         return try {
-            firestore.collection("products").document(product.id).set(product).await()
+            val docRef = firestore.collection("products").document(product.id)
+            val productMap = hashMapOf(
+                "id" to product.id,
+                "name" to product.name,
+                "name_lowercase" to product.name.lowercase(),
+                "price" to product.price,
+                "originalPrice" to product.originalPrice,
+                "description" to product.description,
+                "images" to product.images,
+                "imageUrl" to (product.images.firstOrNull() ?: ""),
+                "stock" to product.stock,
+                "category" to product.category,
+                "isNew" to product.isNew,
+                "isActive" to product.isActive,
+                "model3DUrl" to product.model3DUrl,
+                "has3D" to !product.model3DUrl.isNullOrBlank(),
+                "sold" to product.sold,
+                "rating" to product.rating,
+                "updatedAt" to System.currentTimeMillis()
+            )
+
+            docRef.set(productMap).await()
             Result.success(true)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
     override suspend fun updateProductStock(productId: String, quantityChange: Int) {
         try {
             firestore.runTransaction { transaction ->
@@ -93,7 +122,11 @@ class ProductRepositoryImpl @Inject constructor(
                     transaction.update(productRef, "stock", newStock)
                     if (quantityChange < 0) {
                         val currentSold = snapshot.getLong("sold") ?: 0
-                        transaction.update(productRef, "sold", currentSold + Math.abs(quantityChange))
+                        transaction.update(
+                            productRef,
+                            "sold",
+                            currentSold + Math.abs(quantityChange)
+                        )
                     }
                 }
             }.await()
@@ -101,6 +134,7 @@ class ProductRepositoryImpl @Inject constructor(
             e.printStackTrace()
         }
     }
+
     override suspend fun deleteAllProducts() {
         try {
             val snapshot = firestore.collection("products").get().await()
@@ -114,6 +148,7 @@ class ProductRepositoryImpl @Inject constructor(
             throw e
         }
     }
+
     override suspend fun addToViewHistory(product: Product) {
         val entity = HistoryEntity(
             id = product.id,
@@ -141,7 +176,7 @@ class ProductRepositoryImpl @Inject constructor(
             entities.map { entity ->
                 Product(
                     id = entity.id,
-                    name = entity.title ,
+                    name = entity.title,
                     price = entity.price,
                     images = entity.images,
                     description = entity.content,
@@ -154,7 +189,82 @@ class ProductRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun searchProducts(query: String): Result<List<Product>> {
+        return try {
+            val snapshot = firestore.collection("products").get().await()
+            val allProducts = snapshot.toObjects(Product::class.java)
+
+            val filteredProducts = allProducts.filter { product ->
+                product.name.contains(query, ignoreCase = true)
+            }
+
+            Result.success(filteredProducts)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun syncLowercaseNames(): Result<Boolean> {
+        return try {
+            val snapshot = firestore.collection("products").get().await()
+            val batch = firestore.batch()
+
+            for (document in snapshot.documents) {
+                val name = document.getString("name") ?: ""
+                batch.update(document.reference, "name_lowercase", name.lowercase())
+            }
+
+            batch.commit().await()
+            Result.success(true)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     override suspend fun clearViewHistory() {
         historyDao.clearHistory()
+    }
+    override suspend fun getProductsPaginated(
+        limit: Long,
+        lastDocument: DocumentSnapshot?,
+        category: String,
+        sortBy: String,
+        isAscending: Boolean,
+        minPrice: Long?,
+        maxPrice: Long?
+    ): Result<Pair<List<Product>, DocumentSnapshot?>> {
+        return try {
+            var query: Query = firestore.collection("products")
+            if (category == "3D Model") {
+                query = query.whereEqualTo("has3D", true)
+            } else if (category != "All") {
+                query = query.whereEqualTo("category", category)
+            }
+            if (minPrice != null) {
+                query = query.whereGreaterThanOrEqualTo("price", minPrice)
+            }
+            if (maxPrice != null) {
+                query = query.whereLessThanOrEqualTo("price", maxPrice)
+            }
+            val direction = if (isAscending) Query.Direction.ASCENDING else Query.Direction.DESCENDING
+
+            if (minPrice != null || maxPrice != null) {
+                query = query.orderBy("price", direction)
+            } else {
+                query = query.orderBy(sortBy, direction)
+            }
+
+            query = query.limit(limit)
+            if (lastDocument != null) {
+                query = query.startAfter(lastDocument)
+            }
+            val snapshot = query.get().await()
+            val products = snapshot.toObjects(Product::class.java)
+            val newLastDoc = if (snapshot.documents.isNotEmpty()) snapshot.documents.last() else null
+
+            Result.success(Pair(products, newLastDoc))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }
