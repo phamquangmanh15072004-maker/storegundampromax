@@ -20,11 +20,14 @@ class ReviewRepositoryImpl @Inject constructor(
                 .orderBy("timestamp", Query.Direction.DESCENDING)
                 .get()
                 .await()
+
             val allReviews = snapshot.documents.mapNotNull { doc ->
                 doc.toObject(UserReview::class.java)?.copy(id = doc.id)
             }
+
             val topLevelComments = allReviews.filter { it.parentId == null }
             val replies = allReviews.filter { it.parentId != null }
+
             topLevelComments.map { parent ->
                 val parentReplies = replies
                     .filter { it.parentId == parent.id }
@@ -42,26 +45,33 @@ class ReviewRepositoryImpl @Inject constructor(
         productId: String,
         content: String,
         parentId: String?,
-        rating: Int?
+        rating: Int,
+        mediaUrls: List<String>
     ) {
         val currentUser = auth.currentUser ?: throw Exception("Bạn cần đăng nhập để bình luận!")
         val userId = currentUser.uid
         val reviewRef = firestore.collection("products").document(productId)
             .collection("reviews").document()
 
-        val newReview = mutableMapOf<String, Any?>()
-        newReview["id"] = reviewRef.id
-        newReview["productId"] = productId
-        newReview["userId"] = userId
-        newReview["userName"] = currentUser.displayName ?: "Anonymous"
-        newReview["avatarUrl"] = currentUser.photoUrl?.toString() ?: ""
-        newReview["content"] = content
-        newReview["timestamp"] = System.currentTimeMillis() // 🔥 Đồng nhất dùng kiểu Long
-        newReview["parentId"] = parentId
-        newReview["rating"] = rating ?: 0
+        val newReview = hashMapOf<String, Any>(
+            "id" to reviewRef.id,
+            "productId" to productId,
+            "userId" to userId,
+            "userName" to (currentUser.displayName ?: "Anonymous"),
+            "avatarUrl" to (currentUser.photoUrl?.toString() ?: ""),
+            "content" to content,
+            "timestamp" to System.currentTimeMillis(),
+            "rating" to rating,
+            "mediaUrls" to mediaUrls
+        )
+        if (parentId != null) {
+            newReview["parentId"] = parentId
+        }
 
         reviewRef.set(newReview).await()
-        updateProductAverageRating(productId)
+        if (rating > 0) {
+            updateProductAverageRating(productId)
+        }
     }
 
     override suspend fun submitRating(productId: String, rating: Int) {
@@ -69,20 +79,23 @@ class ReviewRepositoryImpl @Inject constructor(
         val userId = currentUser.uid
 
         val reviewRef = firestore.collection("products").document(productId)
-            .collection("reviews").document(userId)
+            .collection("reviews").document(userId) // Dùng userId làm ID để mỗi người chỉ được 1 đánh giá sao gốc
 
         firestore.runTransaction { transaction ->
             val snapshot = transaction.get(reviewRef)
             if (snapshot.exists()) {
                 transaction.update(reviewRef, "rating", rating)
             } else {
-                val newReview = hashMapOf(
+                val newReview = hashMapOf<String, Any>(
+                    "id" to reviewRef.id,
+                    "productId" to productId,
                     "userId" to userId,
                     "userName" to (currentUser.displayName ?: "Anonymous"),
                     "avatarUrl" to (currentUser.photoUrl?.toString() ?: ""),
                     "rating" to rating,
                     "content" to "",
-                    "timestamp" to System.currentTimeMillis() // 🔥 Đổi Date() thành Long
+                    "timestamp" to System.currentTimeMillis(),
+                    "mediaUrls" to emptyList<String>()
                 )
                 transaction.set(reviewRef, newReview)
             }
@@ -103,8 +116,8 @@ class ReviewRepositoryImpl @Inject constructor(
             .collection("reviews").document(reviewId)
             .update("content", newContent)
             .await()
-        updateProductAverageRating(productId)
     }
+
     private suspend fun updateProductAverageRating(productId: String) {
         try {
             val snapshot = firestore.collection("products").document(productId)
@@ -117,15 +130,13 @@ class ReviewRepositoryImpl @Inject constructor(
             }.filter { it > 0 }
 
             val avgRating = if (allRatings.isNotEmpty()) {
-                allRatings.average()
+                Math.round(allRatings.average() * 10.0) / 10.0
             } else {
                 0.0
             }
             firestore.collection("products").document(productId)
                 .update(
-                    mapOf(
-                        "rating" to avgRating,
-                    )
+                    mapOf("rating" to avgRating)
                 ).await()
 
         } catch (e: Exception) {

@@ -13,5 +13,6 @@ data class UserReview(
     val timestamp: Long = 0L,
     val parentId: String? = null,
     @get:Exclude
-    var replies: List<UserReview> = emptyList()
+    var replies: List<UserReview> = emptyList(),
+    val mediaUrls: List<String> = emptyList()
 )

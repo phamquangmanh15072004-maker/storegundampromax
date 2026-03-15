@@ -23,6 +23,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.cloudinary.android.MediaManager
+import com.example.storepromax.feature.product_detail.components.WriteReviewScreen
 import com.example.storepromax.presentation.admin.AdminDashboardScreen
 import com.example.storepromax.presentation.admin.AdminOrderDetailScreen
 import com.example.storepromax.presentation.admin.AdminOrderScreen
@@ -43,6 +44,7 @@ import com.example.storepromax.presentation.feed.FeedScreen
 import com.example.storepromax.presentation.login.LoginScreen
 import com.example.storepromax.presentation.main.MainScreen
 import com.example.storepromax.presentation.navigation.Screen
+import com.example.storepromax.presentation.notification.NotificationScreen
 import com.example.storepromax.presentation.order.OrderHistoryScreen
 import com.example.storepromax.presentation.profile.AboutScreen
 import com.example.storepromax.presentation.profile.ChangePasswordScreen
@@ -54,6 +56,7 @@ import com.example.storepromax.presentation.register.RegisterScreen
 import com.example.storepromax.presentation.search.SearchScreen
 import com.example.storepromax.presentation.welcome.WelcomeScreen
 import com.example.storepromax.presentation.wishlist.WishlistScreen
+import com.example.storepromax.presentation.writereview.WriteReviewViewModel
 import com.example.storepromax.ui.theme.StorePromaxTheme
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -67,8 +70,10 @@ import java.util.jar.Manifest
 data class DeepLinkData(
     val type: String?,
     val orderId: String? = null,
-    val channelId: String? = null
+    val channelId: String? = null,
+    val action: String? = null
 )
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private var deepLinkData by mutableStateOf<DeepLinkData?>(null)
@@ -84,20 +89,26 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(deepLinkData) {
                     deepLinkData?.let { data ->
                         try {
-                            when (data.type) {
-                                "ORDER_UPDATE" -> {
-                                    if (!data.orderId.isNullOrEmpty()) {
-                                        navController.navigate("order_detail/${data.orderId}")
+                            if (data.action == "NAVIGATE_TO_REVIEW" && !data.orderId.isNullOrEmpty()) {
+                                navController.navigate("write_review_screen/${data.orderId}")
+                            } else {
+                                when (data.type) {
+                                    "ORDER_UPDATE" -> {
+                                        if (!data.orderId.isNullOrEmpty()) {
+                                            navController.navigate("order_detail/${data.orderId}")
+                                        }
                                     }
-                                }
-                                "CHAT" -> {
-                                    if (!data.channelId.isNullOrEmpty()) {
-                                        navController.navigate("chat_detail/${data.channelId}")
+
+                                    "CHAT" -> {
+                                        if (!data.channelId.isNullOrEmpty()) {
+                                            navController.navigate("chat_detail/${data.channelId}")
+                                        }
                                     }
-                                }
-                                "CHAT_ADMIN" -> {
-                                    if (!data.channelId.isNullOrEmpty()) {
-                                        navController.navigate("admin_chat_detail/${data.channelId}")
+
+                                    "CHAT_ADMIN" -> {
+                                        if (!data.channelId.isNullOrEmpty()) {
+                                            navController.navigate("admin_chat_detail/${data.channelId}")
+                                        }
                                     }
                                 }
                             }
@@ -112,13 +123,17 @@ class MainActivity : ComponentActivity() {
                         saveFCMTokenToFirestore()
                     }
                 }
-                if(currentUser != null){
+                if (currentUser != null) {
                     LaunchedEffect(isBanned) {
                         if (isBanned) {
                             navController.navigate(Screen.Login.route) {
                                 popUpTo(0) { inclusive = true }
                             }
-                            Toast.makeText(context, "Phiên đăng nhập hết hạn hoặc tài khoản bị khóa!", Toast.LENGTH_LONG).show()
+                            Toast.makeText(
+                                context,
+                                "Phiên đăng nhập hết hạn hoặc tài khoản bị khóa!",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     }
                 }
@@ -195,7 +210,10 @@ class MainActivity : ComponentActivity() {
                         )
                     ) { backStackEntry ->
                         val tabIndex = backStackEntry.arguments?.getInt("tabIndex") ?: 0
-                        OrderHistoryScreen(navController = navController, initialTabIndex = tabIndex)
+                        OrderHistoryScreen(
+                            navController = navController,
+                            initialTabIndex = tabIndex
+                        )
                     }
                     composable(
                         route = "order_detail/{orderId}",
@@ -270,7 +288,8 @@ class MainActivity : ComponentActivity() {
                         arguments = listOf(navArgument("url") { type = NavType.StringType })
                     ) { backStackEntry ->
                         val encodedUrl = backStackEntry.arguments?.getString("url") ?: ""
-                        val decodedUrl = URLDecoder.decode(encodedUrl, StandardCharsets.UTF_8.toString())
+                        val decodedUrl =
+                            URLDecoder.decode(encodedUrl, StandardCharsets.UTF_8.toString())
                         Model3DScreen(
                             glbUrl = decodedUrl,
                             onBackClick = { navController.popBackStack() }
@@ -338,6 +357,29 @@ class MainActivity : ComponentActivity() {
                     composable("wishlist") {
                         WishlistScreen(navController = navController)
                     }
+                    composable(
+                        route = "write_review_screen/{orderId}",
+                        arguments = listOf(navArgument("orderId") { type = NavType.StringType })
+                    ) { backStackEntry ->
+                        val viewModel: WriteReviewViewModel = hiltViewModel()
+
+                        val productsToReview by viewModel.productsToReview.collectAsState()
+                        val isLoading by viewModel.isLoading.collectAsState()
+
+                        WriteReviewScreen(
+                            navController = navController,
+                            productsToReview = productsToReview,
+                            isLoadingFromVM = isLoading,
+                            onSubmitReview = { productId, rating, text, images, onResult ->
+                                viewModel.submitReview(productId, rating, text, images, onResult)
+                            }
+                        )
+                    }
+                    composable("notification_screen") {
+                        NotificationScreen(
+                            navController = navController
+                        )
+                    }
                 }
             }
         }
@@ -345,6 +387,7 @@ class MainActivity : ComponentActivity() {
         initCloudinary()
         handleIntent(intent)
     }
+
     private fun initCloudinary() {
         try {
             val config = HashMap<String, String>()
@@ -355,6 +398,7 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
         }
     }
+
     private fun saveFCMTokenToFirestore() {
         val currentUser = FirebaseAuth.getInstance().currentUser
         if (currentUser != null) {
@@ -368,17 +412,19 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
     private fun handleIntent(intent: Intent?) {
         intent?.extras?.let { bundle ->
             val type = bundle.getString("type")
             val orderId = bundle.getString("orderId")
             val channelId = bundle.getString("channelId")
-
-            if (type != null) {
-                deepLinkData = DeepLinkData(type, orderId, channelId)
+            val action = bundle.getString("action")
+            if (type != null || action != null) {
+                deepLinkData = DeepLinkData(type, orderId, channelId, action)
             }
         }
     }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

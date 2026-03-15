@@ -26,7 +26,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val body = data["body"] ?: remoteMessage.notification?.body ?: "Bạn có thông báo mới"
 
         val type = data["type"] ?: ""
-
+        val action = data["action"] ?: ""
         showNotification(title, body, type, data)
     }
 

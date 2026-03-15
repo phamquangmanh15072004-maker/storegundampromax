@@ -1,8 +1,11 @@
 package com.example.storepromax.presentation.detail
 
 import android.widget.Toast
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -32,9 +35,20 @@ import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Product
 import com.example.storepromax.feature.product_detail.components.AddToCartSheet
 import com.example.storepromax.feature.product_detail.components.ReviewSection
-import com.example.storepromax.presentation.wishlist.WishlistViewModel // Import ViewModel Yêu thích
+import com.example.storepromax.presentation.home.components.ProductItem
+import com.example.storepromax.presentation.navigation.Screen
+import com.example.storepromax.presentation.wishlist.WishlistViewModel
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.text.DecimalFormat
+
+private val CurrencyFormatter = DecimalFormat("#,###")
+
+val GunplaBlue = Color(0xFF0D47A1)
+val GunplaRed = Color(0xFFFF4136)
+val WarningYellow = Color(0xFFFFDC00)
+val DarkMetal = Color(0xFF111111)
+val BgColor = Color(0xFFF2F4F7)
 
 @Composable
 fun DetailScreen(
@@ -51,28 +65,27 @@ fun DetailScreen(
     val userRating = viewModel.userRating.intValue
 
     val wishlistIds by wishlistViewModel.wishlistIds.collectAsState()
+    val isFavorite = product != null && wishlistIds.contains(product.id)
+
+    val hasPurchased by viewModel.hasPurchased
+    val relatedProducts by viewModel.relatedProducts
 
     val context = LocalContext.current
-    val gundamBlue = Color(0xFF0074D9)
-    val gundamRed = Color(0xFFFF4136)
-    val warningYellow = Color(0xFFFFDC00)
-    val darkMetal = Color(0xFF111111)
     val averageRating by viewModel.averageRating
     val totalRatings by viewModel.totalRatingsCount
     val currentUserId = viewModel.currentUserId
+
     if (isLoading || product == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = gundamBlue)
+            CircularProgressIndicator(color = GunplaBlue)
         }
     } else {
-        val isFavorite = wishlistIds.contains(product.id)
-
         Scaffold(
-            containerColor = Color(0xFFF5F5F5),
+            containerColor = BgColor,
             bottomBar = {
                 BottomActionButtons(
                     product = product,
-                    primaryColor = gundamBlue,
+                    primaryColor = GunplaBlue,
                     onAddToCart = {
                         isBuyNowAction = false
                         showAddToCartSheet = true
@@ -97,90 +110,139 @@ fun DetailScreen(
                     onFavoriteClick = { wishlistViewModel.toggleFavorite(product.id) }
                 )
 
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White)
+                        .padding(16.dp)
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        TechTag(text = product.category, color = gundamBlue)
+                        TechTag(text = product.category, color = GunplaBlue)
                         if (product.isNew) {
                             Spacer(modifier = Modifier.width(8.dp))
-                            TechTag(text = "NEW ARRIVAL", color = warningYellow, textColor = Color.Black)
+                            TechTag(text = "NEW", color = WarningYellow, textColor = Color.Black)
                         }
                         Spacer(modifier = Modifier.weight(1f))
-                        Icon(Icons.Filled.Star, contentDescription = null, tint = warningYellow, modifier = Modifier.size(20.dp))
-                        Text(text = String.format("%.1f", averageRating))
-                        Text(text = "(${product.sold} sold)", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Filled.Star, contentDescription = null, tint = WarningYellow, modifier = Modifier.size(20.dp))
+                        Text(text = String.format("%.1f", averageRating), fontWeight = FontWeight.Bold)
+                        Text(text = " | Đã bán ${product.sold}", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(start = 4.dp))
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
                         text = product.name,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = darkMetal,
-                        lineHeight = 32.sp
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DarkMetal,
+                        lineHeight = 28.sp
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
-                            text = "₫${product.price}",
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = gundamRed
+                            text = "₫${CurrencyFormatter.format(product.price)}",
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = GunplaRed
                         )
                         if (product.originalPrice > product.price) {
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "₫${product.originalPrice}",
+                                text = "₫${CurrencyFormatter.format(product.originalPrice)}",
                                 fontSize = 16.sp,
                                 color = Color.Gray,
                                 textDecoration = TextDecoration.LineThrough,
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            val percent = ((product.originalPrice - product.price) / product.originalPrice.toDouble() * 100).toInt()
+                            Surface(color = GunplaRed.copy(alpha = 0.1f), shape = RoundedCornerShape(4.dp)) {
+                                Text("-$percent%", color = GunplaRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            }
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Column(modifier = Modifier.background(Color.White).padding(16.dp)) {
                     if (!product.model3DUrl.isNullOrEmpty()) {
                         Button3D(onClick = {
                             val encodedUrl = URLEncoder.encode(product.model3DUrl, StandardCharsets.UTF_8.toString())
                             navController.navigate("model_3d/$encodedUrl")
                         })
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
                     TechSpecsSection(product)
+                }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
+                Column(modifier = Modifier.background(Color.White).padding(16.dp)) {
                     ExpandableDescription(product.description)
+                }
 
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Divider(color = Color.LightGray, thickness = 1.dp)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Column(modifier = Modifier.background(Color.White).padding(16.dp)) {
+                    Text(
+                        text = "ĐÁNH GIÁ SẢN PHẨM",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Text(
-                        text = "ĐÁNH GIÁ TỪ CỘNG ĐỒNG",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                    )
                     ReviewSection(
                         currentUserId = currentUserId,
                         averageRating = averageRating,
                         totalRatings = totalRatings,
                         reviews = reviews,
                         currentUserRating = userRating,
-                        onCommentSubmit = { content, parentId, rating ->
-                            viewModel.submitComment(content, parentId, rating)
-                        },
+                        isReadOnly = true,
+                        onCommentSubmit = { _, _, _ -> },
                         onDeleteComment = { viewModel.deleteComment(it) },
                         onEditComment = { id, content -> viewModel.editComment(id, content) }
                     )
-                    Spacer(modifier = Modifier.height(80.dp))
                 }
+
+                if (relatedProducts.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White)
+                            .padding(vertical = 16.dp)
+                    ) {
+                        Text(
+                            text = "CÓ THỂ BẠN CŨNG THÍCH",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(relatedProducts) { relatedProd ->
+                                ProductItem(
+                                    product = relatedProd,
+                                    modifier = Modifier.width(160.dp),
+                                    onClick = { navController.navigate(Screen.Detail.createRoute(relatedProd.id)) },
+                                    onAddToCart = { /* Xử lý tuỳ chọn */ }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(40.dp))
             }
+
             if (showAddToCartSheet) {
                 AddToCartSheet(
                     product = product,
@@ -202,6 +264,42 @@ fun DetailScreen(
     }
 }
 
+@Composable
+fun ExpandableDescription(description: String) {
+    var isExpanded by remember { mutableStateOf(false) }
+    var hasVisualOverflow by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxWidth().animateContentSize()) {
+        Text(text = "Chi Tiết Sản Phẩm", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = description,
+            fontSize = 14.sp,
+            lineHeight = 22.sp,
+            color = Color.DarkGray,
+            maxLines = if (isExpanded) Int.MAX_VALUE else 3,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { textLayoutResult ->
+                if (textLayoutResult.hasVisualOverflow) {
+                    hasVisualOverflow = true
+                }
+            }
+        )
+        if (hasVisualOverflow || isExpanded) {
+            TextButton(
+                onClick = { isExpanded = !isExpanded },
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text(
+                    text = if (isExpanded) "Thu gọn" else "Xem thêm",
+                    color = GunplaBlue,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -224,14 +322,13 @@ fun ProductImageSlider(
             )
         }
 
-        // Gradient đen mờ để nút Back/Share/Heart luôn nổi bật
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(100.dp)
                 .background(
                     brush = Brush.verticalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)
+                        colors = listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent)
                     )
                 )
         )
@@ -239,7 +336,7 @@ fun ProductImageSlider(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 48.dp, start = 16.dp, end = 16.dp), // Né tai thỏ
+                .padding(top = 48.dp, start = 16.dp, end = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             CircleIconButton(icon = Icons.Default.ArrowBack) { navController.popBackStack() }
@@ -247,8 +344,6 @@ fun ProductImageSlider(
             Row {
                 CircleIconButton(icon = Icons.Default.Share) { /* Share logic */ }
                 Spacer(modifier = Modifier.width(12.dp))
-
-                // NÚT TIM YÊU THÍCH NẰM Ở ĐÂY
                 CircleIconButton(
                     icon = if (isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
                     iconColor = if (isFavorite) Color(0xFFFF4136) else Color.White,
@@ -257,47 +352,17 @@ fun ProductImageSlider(
             }
         }
 
-        // Số trang ảnh
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
-                .background(Color.Black.copy(alpha = 0.7f), shape = CutCornerShape(8.dp))
+                .background(Color.Black.copy(alpha = 0.6f), shape = RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Text(
                 text = "${pagerState.currentPage + 1} / ${images.size}",
                 color = Color.White,
                 fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-            )
-        }
-    }
-}
-
-@Composable
-fun ExpandableDescription(description: String) {
-    var isExpanded by remember { mutableStateOf(false) }
-
-    Column {
-        Text(text = "Mô Tả", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = description,
-            fontSize = 15.sp,
-            lineHeight = 24.sp,
-            color = Color.DarkGray,
-            maxLines = if (isExpanded) Int.MAX_VALUE else 3,
-            overflow = TextOverflow.Ellipsis
-        )
-        TextButton(
-            onClick = { isExpanded = !isExpanded },
-            contentPadding = PaddingValues(0.dp)
-        ) {
-            Text(
-                text = if (isExpanded) "Thu gọn" else "Xem thêm",
-                color = Color(0xFF0074D9),
                 fontWeight = FontWeight.Bold
             )
         }
@@ -308,10 +373,10 @@ fun ExpandableDescription(description: String) {
 fun TechTag(text: String, color: Color, textColor: Color = Color.White) {
     Surface(
         color = color,
-        shape = CutCornerShape(topEnd = 10.dp, bottomStart = 10.dp),
+        shape = RoundedCornerShape(4.dp),
         modifier = Modifier.height(24.dp)
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp)) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
             Text(text = text, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor)
         }
     }
@@ -322,9 +387,8 @@ fun Button3D(onClick: () -> Unit) {
     Button(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().height(50.dp),
-        shape = CutCornerShape(12.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color.Black),
-        elevation = ButtonDefaults.buttonElevation(8.dp)
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212121))
     ) {
         Icon(Icons.Default.ViewInAr, contentDescription = null, tint = Color(0xFF00FFCC))
         Spacer(modifier = Modifier.width(12.dp))
@@ -332,8 +396,7 @@ fun Button3D(onClick: () -> Unit) {
             text = "Xem Mô Hình 3D",
             fontWeight = FontWeight.Bold,
             fontSize = 16.sp,
-            color = Color.White,
-            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+            color = Color.White
         )
     }
 }
@@ -342,7 +405,7 @@ fun Button3D(onClick: () -> Unit) {
 fun TechSpecsSection(product: Product) {
     val stockStatus = when {
         product.stock > 10 -> "${product.stock}"
-        product.stock > 0 -> "Chỉ còn ${product.stock} !"
+        product.stock > 0 -> "Chỉ còn ${product.stock}!"
         else -> "Hết Hàng"
     }
     val stockColor = when {
@@ -353,22 +416,20 @@ fun TechSpecsSection(product: Product) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
-            .background(Color.White, RoundedCornerShape(8.dp))
+            .border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(8.dp))
             .padding(16.dp)
     ) {
-        Text("Thông Tin Chi Tiết", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
-        Divider(modifier = Modifier.padding(vertical = 8.dp), color = Color.LightGray)
+        Text("Thông Số Kỹ Thuật", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+        Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
 
         TechRow("Thể Loại", product.category)
         TechRow("Tình Trạng", if (product.isNew) "New Sealed" else "Standard")
-        TechRow("Ngày Sản Xuất", "2024 (Estimated)")
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(text = "Tồn Kho", fontSize = 14.sp, color = Color.Gray)
-            Text(text = stockStatus, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = stockColor)
+            Text(text = stockStatus, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = stockColor)
         }
     }
 }
@@ -376,11 +437,11 @@ fun TechSpecsSection(product: Product) {
 @Composable
 fun TechRow(label: String, value: String) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(text = label, fontSize = 14.sp, color = Color.Gray)
-        Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+        Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray)
     }
 }
 
@@ -392,7 +453,7 @@ fun CircleIconButton(
 ) {
     Surface(
         shape = CircleShape,
-        color = Color.Black.copy(alpha = 0.4f), // Nền đen mờ
+        color = Color.Black.copy(alpha = 0.4f),
         modifier = Modifier.size(40.dp).clickable { onClick() }
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -420,7 +481,6 @@ fun BottomActionButtons(
                 .navigationBarsPadding(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Nút Giỏ hàng (Màu Gundam)
             OutlinedButton(
                 onClick = onAddToCart,
                 modifier = Modifier.size(50.dp),
@@ -433,12 +493,11 @@ fun BottomActionButtons(
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            // Nút MUA NGAY (Màu Gundam)
             Button(
                 onClick = onBuyNow,
                 enabled = isAvailable,
                 modifier = Modifier.weight(1f).height(50.dp),
-                shape = CutCornerShape(topEnd = 16.dp, bottomStart = 16.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = primaryColor,
                     disabledContainerColor = Color.Gray

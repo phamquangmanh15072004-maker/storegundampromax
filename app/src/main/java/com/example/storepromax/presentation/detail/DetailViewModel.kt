@@ -44,6 +44,11 @@ class DetailViewModel @Inject constructor(
     val currentUserId: String
         get() = auth.currentUser?.uid ?: ""
 
+    private val _hasPurchased = mutableStateOf(false)
+    val hasPurchased: State<Boolean> = _hasPurchased
+
+    private val _relatedProducts = mutableStateOf<List<Product>>(emptyList())
+    val relatedProducts: State<List<Product>> = _relatedProducts
     private val currentProductId: String
         get() = savedStateHandle.get<String>("productId") ?: "unknown_id"
     init {
@@ -64,10 +69,19 @@ class DetailViewModel @Inject constructor(
                     _isLoading.value = false
                     if (product != null) {
                         saveToHistory(product)
+                        loadRelatedProducts(product.category, product.id)
                     }
                 }
                 .addOnFailureListener {
                     _isLoading.value = false
+                }
+        }
+    }
+    private fun loadRelatedProducts(category: String, currentProductId: String) {
+        viewModelScope.launch {
+            productRepository.getProductsPaginated(10, null, category, "createdAt", false, null, null)
+                .onSuccess { pair ->
+                    _relatedProducts.value = pair.first.filter { it.id != currentProductId }
                 }
         }
     }

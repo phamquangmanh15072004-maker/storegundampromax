@@ -24,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.*
@@ -46,6 +48,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.storepromax.domain.model.Product
 import com.example.storepromax.feature.product_detail.components.AddToCartSheet
+import com.example.storepromax.presentation.admin.notification.NotificationViewModel
 import com.example.storepromax.presentation.components.SupportButton
 import com.example.storepromax.presentation.home.components.ProductItem
 import com.example.storepromax.presentation.navigation.Screen
@@ -58,8 +61,10 @@ val BgColor = Color(0xFFF2F4F7)
 @Composable
 fun HomeScreen(
     navController: NavController,
-    viewModel: HomeViewModel = hiltViewModel()
+    viewModel: HomeViewModel = hiltViewModel(),
+    notificationViewModel: NotificationViewModel = hiltViewModel()
 ) {
+    val unreadCount by notificationViewModel.unreadCount.collectAsState()
     var showFilterSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val productList by viewModel.products.collectAsState()
@@ -131,7 +136,7 @@ fun HomeScreen(
         ) {
             item(span = { GridItemSpan(2) }) {
                 Column {
-                    HeaderSection(navController)
+                    HeaderSection(navController,unreadCount)
                     Box(modifier = Modifier.padding(16.dp)) { BannerSection() }
                 }
             }
@@ -295,9 +300,12 @@ fun PaddingBox(content: @Composable () -> Unit) {
         content()
     }
 }
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HeaderSection(navController: NavController) {
+fun HeaderSection(
+    navController: NavController,
+    unreadCount: Int
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -310,18 +318,57 @@ fun HeaderSection(navController: NavController) {
             .padding(vertical = 16.dp, horizontal = 16.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp)
-                .background(Color.White, shape = RoundedCornerShape(25.dp))
-                .clip(RoundedCornerShape(25.dp))
-                .clickable { navController.navigate("search") }
-                .padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Search, contentDescription = null, tint = GunplaBlue)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text("Tìm kiếm Gundam, Tool...", color = Color.Gray, fontSize = 14.sp)
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(50.dp)
+                    .background(Color.White, shape = RoundedCornerShape(25.dp))
+                    .clip(RoundedCornerShape(25.dp))
+                    .clickable { navController.navigate("search") }
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Search, contentDescription = null, tint = GunplaBlue)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Tìm kiếm Gundam, Tool...", color = Color.Gray, fontSize = 14.sp)
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            IconButton(
+                onClick = { navController.navigate("notification_screen") },
+                modifier = Modifier.size(48.dp)
+            ) {
+                if (unreadCount > 0) {
+                    BadgedBox(
+                        badge = {
+                            Badge(
+                                containerColor = Color.Red,
+                                contentColor = Color.White
+                            ) {
+                                Text(text = if (unreadCount > 99) "99+" else unreadCount.toString())
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = "Thông báo",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.NotificationsNone,
+                        contentDescription = "Thông báo",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
         }
     }
 }

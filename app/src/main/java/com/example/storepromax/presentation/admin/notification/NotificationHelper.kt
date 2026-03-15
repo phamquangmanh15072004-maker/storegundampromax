@@ -5,6 +5,7 @@ import android.util.Log
 import com.google.auth.oauth2.GoogleCredentials
 import com.example.storepromax.R
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -30,6 +31,7 @@ object NotificationHelper {
     suspend fun sendOrderNotification(
         context: Context,
         userToken: String,
+        userId: String,
         orderId: String,
         status: String,
         cancelReason: String = ""
@@ -37,6 +39,7 @@ object NotificationHelper {
 
         var title = ""
         var body = ""
+        var action = ""
         when (status) {
             "CONFIRMED" -> {
                 title = "Đơn hàng đã được xác nhận ✅"
@@ -49,6 +52,7 @@ object NotificationHelper {
             "DELIVERED" -> {
                 title = "Giao hàng thành công 🎉"
                 body = "Bạn đã nhận được đơn hàng #${orderId}. Hãy đánh giá nhé!"
+                action = "NAVIGATE_TO_REVIEW"
             }
             "CANCELLED" -> {
                 title = "Đơn hàng đã bị hủy ❌"
@@ -57,42 +61,81 @@ object NotificationHelper {
             else -> return@withContext
         }
 
+        saveToFirestore(userId, title, body, status, orderId, action)
+
+        if(userToken.isNotEmpty()){
+            try {
+                val accessToken = getAccessToken(context)
+                val message = JSONObject()
+                val notification = JSONObject()
+                val data = JSONObject()
+
+                notification.put("title", title)
+                notification.put("body", body)
+
+                data.put("type", "ORDER_UPDATE")
+                data.put("orderId", orderId)
+
+                if (action.isNotEmpty()) {
+                    data.put("action", action)
+                }
+
+                message.put("token", userToken)
+                message.put("notification", notification)
+                message.put("data", data)
+
+                val finalJson = JSONObject()
+                finalJson.put("message", message)
+
+                val client = OkHttpClient()
+                val requestBody = finalJson.toString()
+                    .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+                val request = Request.Builder()
+                    .url(FCM_URL)
+                    .addHeader("Authorization", "Bearer $accessToken") // Dùng Bearer Token
+                    .addHeader("Content-Type", "application/json")
+                    .post(requestBody)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                println("FCM v1 Response: ${response.body?.string()}")
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+                println("Lỗi gửi FCM v1: ${e.message}")
+            }
+        }
+    }
+    private suspend fun saveToFirestore(
+        userId: String,
+        title: String,
+        body: String,
+        type: String,
+        orderId: String,
+        action: String
+    ) {
         try {
-            val accessToken = getAccessToken(context)
-            val message = JSONObject()
-            val notification = JSONObject()
-            val data = JSONObject()
+            val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            val notifRef = db.collection("users").document(userId).collection("notifications").document()
 
-            notification.put("title", title)
-            notification.put("body", body)
+            val notificationData = hashMapOf(
+                "id" to notifRef.id,
+                "userId" to userId,
+                "title" to title,
+                "body" to body,
+                "type" to type,
+                "orderId" to orderId,
+                "action" to action.ifEmpty { null },
+                "isRead" to false,
+                "timestamp" to System.currentTimeMillis()
+            )
 
-            data.put("type", "ORDER_UPDATE")
-            data.put("orderId", orderId)
-
-            message.put("token", userToken)
-            message.put("notification", notification)
-            message.put("data", data)
-
-            val finalJson = JSONObject()
-            finalJson.put("message", message)
-
-            val client = OkHttpClient()
-            val requestBody = finalJson.toString()
-                .toRequestBody("application/json; charset=utf-8".toMediaType())
-
-            val request = Request.Builder()
-                .url(FCM_URL)
-                .addHeader("Authorization", "Bearer $accessToken") // Dùng Bearer Token
-                .addHeader("Content-Type", "application/json")
-                .post(requestBody)
-                .build()
-
-            val response = client.newCall(request).execute()
-            println("FCM v1 Response: ${response.body?.string()}")
-
+            notifRef.set(notificationData).await()
+            Log.d("NOTIFICATION", "Đã lưu Database thành công cho user: $userId")
         } catch (e: Exception) {
             e.printStackTrace()
-            println("Lỗi gửi FCM v1: ${e.message}")
+            Log.e("NOTIFICATION", "Lỗi khi lưu Database: ${e.message}")
         }
     }
     suspend fun sendOrderNotificationToAdmin(
@@ -189,7 +232,7 @@ object NotificationHelper {
         try {
             val accessToken = getAccessToken(context)
             val message = JSONObject()
-            val data = JSONObject() // 👉 CHỈ DÙNG DATA
+            val data = JSONObject()
 
             data.put("title", "Tin nhắn mới từ $senderName 💬")
             data.put("body", messageContent)

@@ -12,6 +12,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 object OrderStatus {
@@ -92,20 +93,21 @@ class AdminOrderViewModel @Inject constructor(
         }
     }
     private fun sendNotificationToUser(userId: String, orderId: String, status: String, reason: String = "") {
-        firestore.collection("users").document(userId).get()
-            .addOnSuccessListener { document ->
-                val token = document.getString("fcmToken")
-                if (!token.isNullOrEmpty()) {
-                    viewModelScope.launch {
-                        NotificationHelper.sendOrderNotification(
-                            context = context,
-                            userToken = token,
-                            orderId = orderId,
-                            status = status,
-                            cancelReason = reason
-                        )
-                    }
-                }
+        viewModelScope.launch {
+            try {
+                val document = firestore.collection("users").document(userId).get().await()
+                val token = document.getString("fcmToken") ?: ""
+                NotificationHelper.sendOrderNotification(
+                    context = context,
+                    userToken = token,
+                    userId = userId,
+                    orderId = orderId,
+                    status = status,
+                    cancelReason = reason
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
+        }
     }
 }
