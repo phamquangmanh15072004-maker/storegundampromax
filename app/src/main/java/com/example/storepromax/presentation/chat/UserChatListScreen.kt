@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SupportAgent
@@ -27,6 +26,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.ChatChannel
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -72,7 +72,7 @@ fun UserChatListScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.padding(padding)
             ) {
-                items(myChats) { channel ->
+                items(myChats, key = { it.id }) { channel ->
                     UserChatRowItem(
                         channel = channel,
                         currentUserId = currentUserId,
@@ -95,7 +95,6 @@ fun UserChatRowItem(
     val displayName = remember(channel, currentUserId) {
         when {
             channel.type == "SUPPORT" -> "Hỗ trợ StorePro"
-
             else -> {
                 if (channel.userId == currentUserId) {
                     channel.receiverName.ifBlank { "Người dùng" }
@@ -106,7 +105,22 @@ fun UserChatRowItem(
         }
     }
 
-    val displayImage = if (channel.userId != currentUserId) channel.userAvatar else ""
+    val rawAvatar = remember(channel, currentUserId) {
+        if (channel.userId == currentUserId) {
+            channel.receiverAvatar
+        } else {
+            channel.userAvatar
+        }
+    }
+
+    val displayImage = remember(rawAvatar, displayName) {
+        if (!rawAvatar.isNullOrBlank()) {
+            rawAvatar
+        } else {
+            val safeName = URLEncoder.encode(displayName, "UTF-8")
+            "https://ui-avatars.com/api/?name=$safeName&background=random"
+        }
+    }
 
     val productImage = channel.productImage
 
@@ -117,7 +131,7 @@ fun UserChatRowItem(
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -127,29 +141,29 @@ fun UserChatRowItem(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (displayImage.isNotEmpty()) {
+            if (channel.type == "SUPPORT") {
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xFFE0F2F1),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SupportAgent,
+                        contentDescription = null,
+                        tint = Color(0xFF00695C),
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            } else {
                 AsyncImage(
                     model = displayImage,
-                    contentDescription = null,
+                    contentDescription = "Avatar",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)
                         .background(Color.LightGray)
                 )
-            } else {
-                Surface(
-                    shape = CircleShape,
-                    color = if(channel.type == "SUPPORT") Color(0xFFE0F2F1) else Color(0xFFE3F2FD),
-                    modifier = Modifier.size(56.dp)
-                ) {
-                    Icon(
-                        imageVector = if(channel.type == "SUPPORT") Icons.Default.SupportAgent else Icons.Default.Person,
-                        contentDescription = null,
-                        tint = if(channel.type == "SUPPORT") Color(0xFF00695C) else Color(0xFF1976D2),
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
             }
 
             Spacer(modifier = Modifier.width(16.dp))
@@ -168,11 +182,7 @@ fun UserChatRowItem(
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = timeString,
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
+                    Text(text = timeString, fontSize = 12.sp, color = Color.Gray)
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -199,7 +209,7 @@ fun UserChatRowItem(
                 Spacer(modifier = Modifier.width(8.dp))
                 AsyncImage(
                     model = productImage,
-                    contentDescription = null,
+                    contentDescription = "Product Image",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(40.dp)

@@ -151,7 +151,6 @@ fun CommentItem(
     onMediaClick: (String) -> Unit
 ) {
     val isOwner = comment.userId == currentUserId
-0
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         val avatarUrl = comment.avatarUrl
 

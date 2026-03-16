@@ -251,8 +251,7 @@ class MainActivity : ComponentActivity() {
 
                         ChatDetailScreen(
                             navController = navController,
-                            channelId = channelId,
-                            isAdminView = false
+                            channelId = channelId
                         )
                     }
                     composable(
@@ -260,11 +259,9 @@ class MainActivity : ComponentActivity() {
                         arguments = listOf(navArgument("channelId") { type = NavType.StringType })
                     ) { backStackEntry ->
                         val channelId = backStackEntry.arguments?.getString("channelId") ?: ""
-
                         ChatDetailScreen(
                             navController = navController,
-                            channelId = channelId,
-                            isAdminView = true
+                            channelId = channelId
                         )
                     }
                     composable(

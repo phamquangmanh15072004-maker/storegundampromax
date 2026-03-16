@@ -2,12 +2,14 @@ package com.example.storepromax.presentation.chat
 
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -18,11 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,271 +31,335 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.ChatMessage
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+// 🌟 HÀM TÍNH TOÁN TRẠNG THÁI HOẠT ĐỘNG (CHUẨN MESSENGER)
+fun formatActiveStatus(lastActive: Long?): Pair<String, Boolean> {
+    if (lastActive == null || lastActive == 0L) return Pair("Không rõ", false)
+    val diffMinutes = (System.currentTimeMillis() - lastActive) / (1000 * 60)
+
+    return when {
+        diffMinutes < 5 -> Pair("Đang hoạt động", true) // true là hiện chấm xanh
+        diffMinutes < 60 -> Pair("Hoạt động $diffMinutes phút trước", false)
+        diffMinutes < 1440 -> Pair("Hoạt động ${diffMinutes / 60} giờ trước", false)
+        else -> Pair("Hoạt động ${diffMinutes / 1440} ngày trước", false)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatDetailScreen(
     navController: NavController,
     channelId: String,
-    isAdminView: Boolean = false,
     viewModel: ChatDetailViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    LaunchedEffect(channelId) { viewModel.loadMessages(channelId) }
 
-    LaunchedEffect(channelId) {
-        viewModel.loadMessages(channelId)
-    }
     val uploadingMedia by viewModel.uploadingMedia.collectAsState()
     val messages by viewModel.messages.collectAsState()
     val currentChannel by viewModel.currentChannel.collectAsState()
 
     val listState = rememberLazyListState()
     var textState by remember { mutableStateOf("") }
-
     var previewImageUrl by remember { mutableStateOf<String?>(null) }
+
+    var replyingToMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var selectedMessageForOptions by remember { mutableStateOf<ChatMessage?>(null) }
+
+    var showSettingsSheet by remember { mutableStateOf(false) }
+    val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     val mediaPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            val mimeType = context.contentResolver.getType(uri)
-            val isVideo = mimeType?.startsWith("video") == true
+            val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true
+            viewModel.sendMedia(channelId, uri, isVideo)
+        }
+    }
 
-            viewModel.sendMedia(
-                channelId = channelId,
-                uri = uri,
-                isVideo = isVideo,
-                isSenderAdmin = isAdminView
-            )
-        }
-    }
-    LaunchedEffect(uploadingMedia, messages.size) {
-        if (messages.isNotEmpty() || uploadingMedia != null) {
-            val targetIndex = if (uploadingMedia != null) messages.size else messages.size - 1
-            if (targetIndex >= 0) {
-                listState.animateScrollToItem(targetIndex)
-            }
-        }
-    }
-    LaunchedEffect(messages.size) {
+    LaunchedEffect(messages.size, uploadingMedia) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+            listState.animateScrollToItem(messages.size + (if (uploadingMedia != null) 1 else 0))
         }
     }
+
+    val blockedByList = currentChannel?.blockedBy ?: emptyList()
+    val isBlocked = blockedByList.isNotEmpty()
+    val amIBlocking = blockedByList.contains(viewModel.currentUserId)
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        val titleText = when {
-                            isAdminView -> currentChannel?.userName ?: "Khách hàng"
-                            currentChannel?.type == "SUPPORT" -> "Hỗ trợ viên StorePro"
-                            else -> if (currentChannel?.userId == viewModel.currentUserId)
-                                currentChannel?.receiverName ?: "Chat"
-                            else currentChannel?.userName ?: "Chat"
-                        }
-
-                        Text(titleText, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        if (isAdminView) {
-                            val status = if(currentChannel?.status == "SOLVED") "Đã xong" else "Đang hỗ trợ"
-                            Text("Ticket: #${channelId.take(6).uppercase()} • $status", fontSize = 12.sp, color = Color.Gray)
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = null)
-                    }
-                },
-                actions = {
-                    if (isAdminView && currentChannel?.status != "SOLVED") {
-                        TextButton(onClick = { viewModel.closeTicket(channelId) }) {
-                            Text("HOÀN TẤT", color = Color.Red, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
-            )
-        },
-        bottomBar = {
-            if (currentChannel?.status != "SOLVED") {
-                Column {
-                    EmojiBar(onEmojiClick = { textState += it })
-
-                    ChatInputBar(
-                        text = textState,
-                        onTextChange = { textState = it },
-                        onSend = {
-                            viewModel.sendMessage(channelId, textState, isSenderAdmin = isAdminView)
-                            textState = ""
-                        },
-                        onAttachClick = {
-                            mediaPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                            )
-                        }
-                    )
-                }
-            } else {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .background(Color(0xFFEEEEEE), RoundedCornerShape(8.dp))
-                        .padding(8.dp),
-                    contentAlignment = Alignment.Center
+            val partnerAvatarUrl by viewModel.partnerAvatarUrl.collectAsState()
+            Surface(shadowElevation = 2.dp, color = Color.White) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Phiên hỗ trợ này đã kết thúc.", color = Color.Gray)
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color(0xFF007AFF))
+                    }
+
+                    val chatPartnerName = if (currentChannel?.userId == viewModel.currentUserId) currentChannel?.receiverName else currentChannel?.userName
+                    val chatPartnerId = if (currentChannel?.userId == viewModel.currentUserId) currentChannel?.receiverId else currentChannel?.userId
+                    LaunchedEffect(chatPartnerId) {
+                        if (!chatPartnerId.isNullOrBlank()) {
+                            viewModel.fetchPartnerInfo(chatPartnerId)
+                        }
+                    }
+                    val partnerLastActive = System.currentTimeMillis() - (2 * 60 * 1000)
+                    val (statusText, isOnline) = formatActiveStatus(partnerLastActive)
+
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (!chatPartnerId.isNullOrBlank()) {
+                                    navController.navigate("profile_detail/$chatPartnerId")
+                                }
+                            }
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+                            AsyncImage(
+                                model = if (!partnerAvatarUrl.isNullOrBlank()) partnerAvatarUrl
+                                else "https://ui-avatars.com/api/?name=${chatPartnerName ?: "User"}",
+                                contentDescription = "Avatar",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(40.dp).clip(CircleShape)
+                            )
+                            if (isOnline && !isBlocked) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(14.dp)
+                                        .align(Alignment.BottomEnd)
+                                        .background(Color(0xFF4CAF50), CircleShape)
+                                        .border(2.dp, Color.White, CircleShape)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        // TÊN VÀ TRẠNG THÁI
+                        Column {
+                            Text(text = chatPartnerName ?: "Khách hàng", fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(if (isBlocked) "Không khả dụng" else statusText, fontSize = 12.sp, color = if (isOnline && !isBlocked) Color(0xFF4CAF50) else Color.Gray)
+                        }
+                    }
+
+                    // NÚT INFO CÀI ĐẶT
+                    IconButton(onClick = { showSettingsSheet = true }) {
+                        Icon(Icons.Outlined.Info, contentDescription = "Info", tint = Color(0xFF007AFF))
+                    }
                 }
             }
         },
-        containerColor = Color(0xFFF5F5F5)
+        bottomBar = {
+            Column(modifier = Modifier.background(Color.White)) {
+                if (isBlocked) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().background(Color(0xFFF0F2F5)).padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (amIBlocking) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Bạn đã chặn người này.", color = Color.Gray, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = { viewModel.unblockUser(channelId) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray)
+                                ) { Text("Bỏ chặn", fontWeight = FontWeight.Bold) }
+                            }
+                        } else {
+                            Text("Bạn không thể trả lời cuộc trò chuyện này.", color = Color.Gray, fontSize = 14.sp)
+                        }
+                    }
+                } else {
+                    EmojiBar(onEmojiClick = { textState += it })
+
+                    // 🌟 GIAO DIỆN KHUNG ĐANG TRẢ LỜI TINH TẾ (THANH DỌC)
+                    if (replyingToMessage != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(modifier = Modifier.width(4.dp).height(36.dp).background(Color(0xFF007AFF), RoundedCornerShape(2.dp)))
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Đang trả lời ${if (replyingToMessage!!.senderId == viewModel.currentUserId) "chính mình" else "đối phương"}", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF007AFF))
+                                Text(replyingToMessage!!.content, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = Color.Gray)
+                            }
+                            IconButton(onClick = { replyingToMessage = null }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Hủy", tint = Color.Gray)
+                            }
+                        }
+                    }
+
+                    ChatInputBar(
+                        text = textState, onTextChange = { textState = it },
+                        onSend = {
+                            viewModel.sendMessage(channelId, textState, replyingToMessage?.id)
+                            textState = ""; replyingToMessage = null
+                        },
+                        onAttachClick = { mediaPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }
+                    )
+                }
+            }
+        },
+        containerColor = Color.White
     ) { padding ->
         LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            state = listState, modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages) { msg ->
+            items(messages, key = { it.id }) { msg ->
                 val isMe = msg.senderId == viewModel.currentUserId
-                Log.d("Check","$isMe")
+                val repliedMsg = if (msg.replyToId != null) messages.find { it.id == msg.replyToId } else null
+
                 MessageBubble(
                     message = msg,
                     isMe = isMe,
-                    onImageClick = { url -> previewImageUrl = url }
+                    repliedMessage = repliedMsg,
+                    currentUserId = viewModel.currentUserId,
+                    onImageClick = { url -> previewImageUrl = url },
+                    onLongPress = { selectedMessageForOptions = msg }
                 )
             }
             if (uploadingMedia != null) {
-                item {
-                    UploadingBubble(media = uploadingMedia!!)
-                }
+                item { UploadingBubble(media = uploadingMedia!!) }
             }
         }
     }
 
-    if (previewImageUrl != null) {
-        FullImageDialog(imageUrl = previewImageUrl!!) {
-            previewImageUrl = null
+    if (previewImageUrl != null) FullImageDialog(imageUrl = previewImageUrl!!) { previewImageUrl = null }
+
+    // BOTTOM SHEET MENU TIN NHẮN
+    if (selectedMessageForOptions != null) {
+        ModalBottomSheet(onDismissRequest = { selectedMessageForOptions = null }, sheetState = bottomSheetState, containerColor = Color.White) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                if (selectedMessageForOptions?.content != "Tin nhắn đã bị thu hồi" && !isBlocked) {
+                    ListItem(headlineContent = { Text("Trả lời", fontWeight = FontWeight.Medium) }, leadingContent = { Icon(Icons.Default.Reply, null, tint = Color.Black) }, modifier = Modifier.clickable { replyingToMessage = selectedMessageForOptions; selectedMessageForOptions = null })
+                }
+                if (selectedMessageForOptions?.senderId == viewModel.currentUserId && selectedMessageForOptions?.content != "Tin nhắn đã bị thu hồi") {
+                    ListItem(headlineContent = { Text("Thu hồi", fontWeight = FontWeight.Medium, color = Color.Red) }, leadingContent = { Icon(Icons.Default.Undo, null, tint = Color.Red) }, modifier = Modifier.clickable { viewModel.revokeMessage(channelId, selectedMessageForOptions!!.id); selectedMessageForOptions = null })
+                }
+                ListItem(headlineContent = { Text("Gỡ ở phía bạn", fontWeight = FontWeight.Medium) }, leadingContent = { Icon(Icons.Default.DeleteOutline, null, tint = Color.Black) }, modifier = Modifier.clickable { viewModel.deleteMessageForMe(channelId, selectedMessageForOptions!!.id); selectedMessageForOptions = null })
+            }
+        }
+    }
+
+    // BOTTOM SHEET CÀI ĐẶT (CHẶN NGƯỜI DÙNG)
+    if (showSettingsSheet) {
+        ModalBottomSheet(onDismissRequest = { showSettingsSheet = false }, sheetState = bottomSheetState, containerColor = Color.White) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                if (amIBlocking) {
+                    ListItem(
+                        headlineContent = { Text("Bỏ chặn người dùng này", fontWeight = FontWeight.Medium, color = Color(0xFF007AFF)) },
+                        leadingContent = { Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF007AFF)) },
+                        modifier = Modifier.clickable { viewModel.unblockUser(channelId); showSettingsSheet = false }
+                    )
+                } else {
+                    ListItem(
+                        headlineContent = { Text("Chặn người dùng", fontWeight = FontWeight.Medium, color = Color.Red) },
+                        leadingContent = { Icon(Icons.Default.Block, null, tint = Color.Red) },
+                        modifier = Modifier.clickable { viewModel.blockUser(channelId); showSettingsSheet = false }
+                    )
+                }
+            }
         }
     }
 }
 
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageBubble(
     message: ChatMessage,
     isMe: Boolean,
-    onImageClick: (String) -> Unit
+    repliedMessage: ChatMessage?,
+    currentUserId: String,
+    onImageClick: (String) -> Unit,
+    onLongPress: () -> Unit
 ) {
     val context = LocalContext.current
-    val timeString = remember(message.timestamp) {
-        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
-        try { sdf.format(Date(message.timestamp)) } catch (e: Exception) { "" }
-    }
+    val timeString = remember(message.timestamp) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)) }
 
-    val textBubbleShape = if (isMe) {
-        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 4.dp)
-    } else {
-        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 4.dp, bottomEnd = 18.dp)
-    }
-
-    val mediaShape = RoundedCornerShape(16.dp)
-
-    val bubbleColor = if (isMe) Color(0xFF007AFF) else Color.White
+    val textBubbleShape = if (isMe) RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp) else RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)
+    val bubbleColor = if (isMe) Color(0xFF007AFF) else Color(0xFFF0F2F5)
     val textColor = if (isMe) Color.White else Color.Black
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
     ) {
-        when (message.type) {
-            "IMAGE" -> {
-                AsyncImage(
-                    model = message.mediaUrl,
-                    contentDescription = "Gửi ảnh",
-                    modifier = Modifier
-                        .widthIn(max = 280.dp)
-                        .heightIn(max = 350.dp)
-                        .padding(bottom = 4.dp)
-                        .clip(mediaShape)
-                        .clickable { onImageClick(message.mediaUrl) },
-                    contentScale = ContentScale.Crop
-                )
+        if (message.content == "Tin nhắn đã bị thu hồi") {
+            Box(modifier = Modifier.clip(RoundedCornerShape(18.dp)).border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(18.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Text(text = message.content, color = Color.Gray, fontSize = 14.sp, fontStyle = FontStyle.Italic)
             }
-            "VIDEO" -> {
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = 280.dp)
-                        .height(200.dp)
-                        .padding(bottom = 4.dp)
-                        .clip(mediaShape)
-                        .background(Color.Black)
-                        .clickable {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(message.mediaUrl))
-                                intent.setDataAndType(Uri.parse(message.mediaUrl), "video/*")
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    val thumbUrl = if (message.mediaUrl.contains("cloudinary"))
-                        message.mediaUrl.replace(".mp4", ".jpg")
-                    else message.mediaUrl
+            return
+        }
 
-                    AsyncImage(
-                        model = thumbUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize().alpha(0.6f),
-                        contentScale = ContentScale.Crop
-                    )
-                    Icon(
-                        imageVector = Icons.Default.PlayCircle,
-                        contentDescription = "Play",
-                        tint = Color.White,
-                        modifier = Modifier.size(48.dp)
-                    )
-                }
-            }
-            else -> {
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = 280.dp)
-                        .clip(textBubbleShape)
-                        .background(bubbleColor)
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        text = message.content,
-                        color = textColor,
-                        fontSize = 15.sp,
-                        lineHeight = 22.sp
-                    )
+        // 🌟 TIN NHẮN TRÍCH DẪN (NẰM TRÊN BUBBLE MỚI)
+        if (repliedMessage != null) {
+            val replySender = if (repliedMessage.senderId == currentUserId) "Bạn" else "Đối phương"
+            Column(
+                modifier = Modifier.padding(bottom = 2.dp).alpha(0.75f),
+                horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
+            ) {
+                Text("Đã trả lời $replySender", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Color.Gray, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                Box(modifier = Modifier.background(Color.Gray.copy(alpha = 0.15f), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 6.dp)) {
+                    Text(text = repliedMessage.content, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = Color.DarkGray)
                 }
             }
         }
-        Text(
-            text = timeString,
-            fontSize = 10.sp,
-            color = Color.Gray,
-            modifier = Modifier.padding(horizontal = 4.dp)
-        )
+
+        Box(
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .clip(if (message.type == "TEXT") textBubbleShape else RoundedCornerShape(16.dp))
+                .background(if (message.type == "TEXT") bubbleColor else Color.Transparent)
+                .combinedClickable(onClick = { }, onLongClick = { onLongPress() })
+        ) {
+            when (message.type) {
+                "IMAGE" -> { AsyncImage(model = message.mediaUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.heightIn(max = 300.dp).clickable { onImageClick(message.mediaUrl) }) }
+                "VIDEO" -> {
+                    Box(modifier = Modifier.height(200.dp).background(Color.Black).clickable {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(message.mediaUrl))
+                            intent.setDataAndType(Uri.parse(message.mediaUrl), "video/*")
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
+                    }, contentAlignment = Alignment.Center) {
+                        AsyncImage(model = message.mediaUrl.replace(".mp4", ".jpg"), contentDescription = null, modifier = Modifier.alpha(0.6f), contentScale = ContentScale.Crop)
+                        Icon(Icons.Default.PlayCircle, null, tint = Color.White, modifier = Modifier.size(48.dp))
+                    }
+                }
+                else -> { Text(text = message.content, color = textColor, fontSize = 15.sp, modifier = Modifier.padding(12.dp)) }
+            }
+        }
+        Text(text = timeString, fontSize = 10.sp, color = Color.Gray, modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp))
     }
 }
 
@@ -307,150 +370,73 @@ fun ChatInputBar(
     onSend: () -> Unit,
     onAttachClick: () -> Unit
 ) {
-    Surface(
-        shadowElevation = 10.dp,
-        color = Color.White,
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Nút Attach (Ghim)
-            IconButton(onClick = onAttachClick) {
-                Icon(Icons.Default.AttachFile, contentDescription = "Gửi media", tint = Color(0xFF007AFF))
-            }
+        IconButton(onClick = onAttachClick) {
+            Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Gửi media", tint = Color(0xFF007AFF))
+        }
 
-            // Ô nhập liệu bo tròn
-            TextField(
-                value = text,
-                onValueChange = onTextChange,
-                placeholder = { Text("Nhập tin nhắn...", color = Color.Gray, fontSize = 14.sp) },
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 4.dp),
-                shape = RoundedCornerShape(24.dp),
-                colors = TextFieldDefaults.colors(
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                    focusedContainerColor = Color(0xFFF0F2F5), // Màu xám nhạt nền input
-                    unfocusedContainerColor = Color(0xFFF0F2F5),
-                    cursorColor = Color(0xFF007AFF)
-                ),
-                maxLines = 4,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) onSend() })
-            )
+        TextField(
+            value = text,
+            onValueChange = onTextChange,
+            placeholder = { Text("Nhắn tin...", color = Color.Gray, fontSize = 14.sp) },
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = TextFieldDefaults.colors(
+                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                focusedContainerColor = Color(0xFFF0F2F5), unfocusedContainerColor = Color(0xFFF0F2F5),
+                cursorColor = Color(0xFF007AFF)
+            ),
+            maxLines = 4,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) onSend() })
+        )
 
-            // Nút gửi
-            val canSend = text.isNotBlank()
-            IconButton(
-                onClick = onSend,
-                enabled = canSend,
-                modifier = Modifier
-                    .padding(start = 8.dp)
-                    .size(40.dp)
-                    .background(if (canSend) Color(0xFF007AFF) else Color(0xFFE0E0E0), CircleShape)
-            ) {
-                Icon(
-                    Icons.Default.Send,
-                    contentDescription = "Gửi",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+        val canSend = text.isNotBlank()
+        IconButton(onClick = onSend, enabled = canSend) {
+            Icon(Icons.Default.Send, contentDescription = "Gửi", tint = if (canSend) Color(0xFF007AFF) else Color.Gray)
         }
     }
 }
 
 @Composable
 fun EmojiBar(onEmojiClick: (String) -> Unit) {
-    val emojis = listOf("👍", "❤️", "😂", "😭", "😡", "🥰", "✅", "👋", "📦")
+    val emojis = listOf("👍", "❤️", "😂", "😭", "😡", "🥰", "✅", "👋")
     LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceAround
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly
     ) {
         items(emojis) { emoji ->
-            Text(
-                text = emoji,
-                fontSize = 22.sp,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable { onEmojiClick(emoji) }
-                    .padding(8.dp)
-            )
+            Text(text = emoji, fontSize = 24.sp, modifier = Modifier.clip(CircleShape).clickable { onEmojiClick(emoji) }.padding(8.dp))
         }
     }
 }
 
 @Composable
 fun FullImageDialog(imageUrl: String, onDismiss: () -> Unit) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false) // Full màn hình
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .clickable { onDismiss() } // Bấm ra ngoài là đóng
-        ) {
-            AsyncImage(
-                model = imageUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxWidth().align(Alignment.Center),
-                contentScale = ContentScale.Fit
-            )
-            // Nút đóng ở góc
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-                    .background(Color.White.copy(alpha = 0.3f), CircleShape)
-            ) {
-                Icon(Icons.Default.Close, contentDescription = null, tint = Color.White)
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black).clickable { onDismiss() }) {
+            AsyncImage(model = imageUrl, contentDescription = null, modifier = Modifier.fillMaxWidth().align(Alignment.Center), contentScale = ContentScale.Fit)
+            IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).background(Color.White.copy(alpha = 0.3f), CircleShape)) {
+                Icon(Icons.Default.Close, null, tint = Color.White)
             }
         }
     }
 }
+
 @Composable
 fun UploadingBubble(media: UploadingMedia) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        horizontalAlignment = Alignment.End
-    ) {
-        Box(
-            contentAlignment = Alignment.Center
-        ) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = Alignment.End) {
+        Box(contentAlignment = Alignment.Center) {
             AsyncImage(
-                model = media.uri,
-                contentDescription = "Uploading",
-                modifier = Modifier
-                    .width(150.dp)
-                    .height(200.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .alpha(0.5f)
-                    .background(Color.Gray),
+                model = media.uri, contentDescription = "Uploading",
+                modifier = Modifier.width(150.dp).height(200.dp).clip(RoundedCornerShape(16.dp)).alpha(0.5f).background(Color.Gray),
                 contentScale = ContentScale.Crop
             )
-            CircularProgressIndicator(
-                color = Color.White,
-                modifier = Modifier.size(32.dp),
-                strokeWidth = 3.dp
-            )
+            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
         }
-        Text(
-            text = "Đang gửi...",
-            fontSize = 10.sp,
-            color = Color.Gray,
-            modifier = Modifier.padding(top = 4.dp, end = 4.dp)
-        )
+        Text(text = "Đang gửi...", fontSize = 10.sp, color = Color.Gray, modifier = Modifier.padding(top = 4.dp, end = 4.dp))
     }
 }

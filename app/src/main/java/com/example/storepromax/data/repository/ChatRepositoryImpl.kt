@@ -16,6 +16,7 @@ class ChatRepositoryImpl @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
 ) : ChatRepository {
+
     override fun getSupportChannels(): Flow<List<ChatChannel>> = callbackFlow {
         val subscription = firestore.collection("channels")
             .whereEqualTo("type", "SUPPORT")
@@ -29,20 +30,21 @@ class ChatRepositoryImpl @Inject constructor(
             }
         awaitClose { subscription.remove() }
     }
+
     override fun getMessages(channelId: String): Flow<List<ChatMessage>> = callbackFlow {
         val subscription = firestore.collection("channels").document(channelId)
             .collection("messages")
-            .orderBy("timestamp", Query.Direction.ASCENDING) // Tin cũ ở trên, mới ở dưới
+            .orderBy("timestamp", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) { close(error); return@addSnapshotListener }
                 val messages = snapshot?.documents?.mapNotNull { doc ->
                     doc.toObject(ChatMessage::class.java)?.copy(id = doc.id)
                 } ?: emptyList()
-
                 trySend(messages)
             }
         awaitClose { subscription.remove() }
     }
+
     override suspend fun sendMessage(
         channelId: String,
         content: String,
@@ -83,6 +85,7 @@ class ChatRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+
     override suspend fun updateChannelStatus(channelId: String, newStatus: String): Result<Boolean> {
         return try {
             firestore.collection("channels").document(channelId)
@@ -92,11 +95,12 @@ class ChatRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+
     override fun getUserChannels(): Flow<List<ChatChannel>> = callbackFlow {
         val currentUserId = auth.currentUser?.uid ?: run { close(); return@callbackFlow }
 
         val subscription = firestore.collection("channels")
-            .whereArrayContains("participants", currentUserId) // 🔥 Lấy chat mà tôi có tham gia
+            .whereArrayContains("participants", currentUserId)
             .orderBy("lastUpdated", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) { close(error); return@addSnapshotListener }
@@ -107,17 +111,31 @@ class ChatRepositoryImpl @Inject constructor(
             }
         awaitClose { subscription.remove() }
     }
+
     override suspend fun createTradeChannel(
         sellerId: String,
         product: com.example.storepromax.domain.model.Product
     ): Result<String> {
         return try {
             val myId = auth.currentUser?.uid ?: return Result.failure(Exception("Chưa đăng nhập"))
+
+            var sellerAvatar = ""
+            var sellerName = "Người bán"
+            val sellerDoc = firestore.collection("users").document(sellerId).get().await()
+            if (sellerDoc.exists()) {
+                sellerAvatar = sellerDoc.getString("avatarUrl") ?: sellerDoc.getString("userAvatar") ?: ""
+                sellerName = sellerDoc.getString("displayName") ?: "Người bán"
+            }
+
             val newChannel = ChatChannel(
                 participants = listOf(myId, sellerId),
                 type = "TRADE",
                 userId = myId,
                 userName = auth.currentUser?.displayName ?: "Người mua",
+                userAvatar = auth.currentUser?.photoUrl?.toString() ?: "",
+                receiverId = sellerId,
+                receiverName = sellerName,
+                receiverAvatar = sellerAvatar,
                 productId = product.id,
                 productName = product.name,
                 productImage = product.imageUrl,
@@ -126,13 +144,14 @@ class ChatRepositoryImpl @Inject constructor(
             )
 
             val ref = firestore.collection("channels").add(newChannel).await()
-            sendMessage(ref.id, "Chào bạn, mình muốn hỏi về sản phẩm ${product.name}", isAdmin = false)
+            sendMessage(ref.id, "Chào bạn, mình muốn hỏi về sản phẩm ${product.name}", "TEXT", "", isAdmin = false)
 
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
     override suspend fun getOrCreateSupportChannel(): Result<String> {
         return try {
             val userId = auth.currentUser?.uid ?: return Result.failure(Exception("Chưa đăng nhập"))
@@ -159,7 +178,6 @@ class ChatRepositoryImpl @Inject constructor(
                 userId = userId,
                 userName = displayName,
                 userAvatar = currentUser?.photoUrl?.toString() ?: "",
-
                 lastMessage = "Yêu cầu hỗ trợ mới",
                 lastUpdated = System.currentTimeMillis(),
                 status = "PENDING"
@@ -182,6 +200,7 @@ class ChatRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+
     override suspend fun getOrCreateUserChat(
         targetUserId: String,
         targetUserName: String,
@@ -203,6 +222,12 @@ class ChatRepositoryImpl @Inject constructor(
                 return Result.success(existingChat.id)
             }
 
+            var partnerAvatar = ""
+            val partnerDoc = firestore.collection("users").document(targetUserId).get().await()
+            if (partnerDoc.exists()) {
+                partnerAvatar = partnerDoc.getString("avatarUrl") ?: partnerDoc.getString("userAvatar") ?: ""
+            }
+
             val currentUser = auth.currentUser
             val myName = currentUser?.displayName ?: "Người dùng"
             val myAvatar = currentUser?.photoUrl?.toString() ?: ""
@@ -215,12 +240,13 @@ class ChatRepositoryImpl @Inject constructor(
                 userAvatar = myAvatar,
                 receiverId = targetUserId,
                 receiverName = targetUserName,
+                receiverAvatar = partnerAvatar,
                 lastMessage = initialContent,
                 lastUpdated = System.currentTimeMillis()
             )
 
             val ref = firestore.collection("channels").add(newChannel).await()
-            sendMessage(ref.id, initialContent, isAdmin = false)
+            sendMessage(ref.id, initialContent, "TEXT", "", isAdmin = false)
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)

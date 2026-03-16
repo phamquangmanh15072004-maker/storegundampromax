@@ -18,7 +18,9 @@ data class ChatChannel(
     val lastMessage: String = "",
     val lastUpdated: Long = System.currentTimeMillis(),
     val status: String = "PENDING",
-    val type: String = "SUPPORT"
+    val type: String = "SUPPORT",
+    val blockedBy: List<String> = emptyList(),
+    val receiverAvatar: String = "",
 )
 data class ChatMessage(
     val id: String = "",
@@ -28,5 +30,7 @@ data class ChatMessage(
     val timestamp: Long = 0,
     val isAdmin: Boolean = false,
     val type: String = "TEXT",
-    val mediaUrl: String = ""
+    val mediaUrl: String = "",
+    val replyToId: String? = null,
+    val deletedBy: List<String> = emptyList()
 )
