@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -26,7 +27,10 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -49,15 +53,14 @@ import coil.request.ImageRequest
 import com.example.storepromax.domain.model.Product
 import com.example.storepromax.feature.product_detail.components.AddToCartSheet
 import com.example.storepromax.presentation.admin.notification.NotificationViewModel
-import com.example.storepromax.presentation.components.SupportButton
 import com.example.storepromax.presentation.home.components.ProductItem
 import com.example.storepromax.presentation.navigation.Screen
-import com.google.android.filament.Filament.init
 import kotlinx.coroutines.launch
 
 val GunplaBlue = Color(0xFF0D47A1)
 val BgColor = Color(0xFFF2F4F7)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     navController: NavController,
@@ -66,6 +69,9 @@ fun HomeScreen(
 ) {
     val unreadCount by notificationViewModel.unreadCount.collectAsState()
     var showFilterSheet by remember { mutableStateOf(false) }
+
+    var showSupportSheet by remember { mutableStateOf(false) }
+
     val context = LocalContext.current
     val productList by viewModel.products.collectAsState()
     val newArrivals by viewModel.newArrivals.collectAsState()
@@ -74,15 +80,16 @@ fun HomeScreen(
     var productToAddToCart by remember { mutableStateOf<Product?>(null) }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val coroutineScope = rememberCoroutineScope()
+
     val showScrollToTop by remember {
-        derivedStateOf {
-            gridState.firstVisibleItemIndex > 2
-        }
+        derivedStateOf { gridState.firstVisibleItemIndex > 2 }
     }
+
     val currentSortBy by viewModel.currentSortBy.collectAsState()
     val currentIsAscending by viewModel.currentIsAscending.collectAsState()
     val currentMinPrice by viewModel.currentMinPrice.collectAsState()
     val currentMaxPrice by viewModel.currentMaxPrice.collectAsState()
+
     val isAtBottom by remember {
         derivedStateOf {
             val layoutInfo = gridState.layoutInfo
@@ -91,34 +98,52 @@ fun HomeScreen(
             lastVisibleItemIndex >= totalItems - 2 && totalItems > 0
         }
     }
-    LaunchedEffect(isAtBottom) {
-        println("Pagination: isAtBottom = $isAtBottom, isLastPage = ${viewModel.isLastPage}")
 
+    LaunchedEffect(isAtBottom) {
         if (isAtBottom && !viewModel.isLastPage && !viewModel.isPaginating) {
             viewModel.loadMoreProducts()
         }
     }
+
     LaunchedEffect(Unit) {
         viewModel.loadInitialProducts()
     }
+
     Scaffold(
         containerColor = BgColor,
         floatingActionButton = {
-            AnimatedVisibility(visible = showScrollToTop) {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                AnimatedVisibility(visible = showScrollToTop) {
+                    FloatingActionButton(
+                        onClick = {
+                            coroutineScope.launch { gridState.animateScrollToItem(0) }
+                        },
+                        containerColor = Color.White,
+                        contentColor = GunplaBlue,
+                        shape = CircleShape,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = "Lên đầu trang"
+                        )
+                    }
+                }
+
                 FloatingActionButton(
-                    onClick = {
-                        coroutineScope.launch {
-                            gridState.animateScrollToItem(0)
-                        }
-                    },
+                    onClick = { showSupportSheet = true },
                     containerColor = GunplaBlue,
                     contentColor = Color.White,
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.size(56.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.KeyboardArrowUp,
-                        contentDescription = "Lên đầu trang",
-                        modifier = Modifier.size(32.dp)
+                        imageVector = Icons.Default.SupportAgent,
+                        contentDescription = "Hỗ trợ",
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             }
@@ -136,7 +161,7 @@ fun HomeScreen(
         ) {
             item(span = { GridItemSpan(2) }) {
                 Column {
-                    HeaderSection(navController,unreadCount)
+                    HeaderSection(navController, unreadCount)
                     Box(modifier = Modifier.padding(16.dp)) { BannerSection() }
                 }
             }
@@ -145,17 +170,12 @@ fun HomeScreen(
                     Column(modifier = Modifier.padding(bottom = 16.dp)) {
                         PaddingBox { SectionTitle(title = "HÀNG MỚI VỀ 🔥") }
                         Spacer(modifier = Modifier.height(12.dp))
-
                         LazyRow(
                             modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(3) {
-                                Box(modifier = Modifier.width(160.dp)) {
-                                    ShimmerProductItem()
-                                }
-                            }
+                            items(3) { Box(modifier = Modifier.width(160.dp)) { ShimmerProductItem() } }
                         }
                     }
                 }
@@ -164,7 +184,6 @@ fun HomeScreen(
                     Column(modifier = Modifier.padding(bottom = 16.dp)) {
                         PaddingBox { SectionTitle(title = "HÀNG MỚI VỀ 🔥") }
                         Spacer(modifier = Modifier.height(12.dp))
-
                         LazyRow(
                             modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(horizontal = 10.dp),
@@ -172,14 +191,14 @@ fun HomeScreen(
                         ) {
                             itemsIndexed(
                                 items = newArrivals,
-                                key = { _, product -> "new_${product.id}" }
-                            ) { _, product ->
+                                key = { _, product -> "new_${product.id}" }) { _, product ->
                                 ProductItem(
-                                    product = product,
-                                    modifier = Modifier.width(160.dp),
+                                    product = product, modifier = Modifier.width(160.dp),
                                     onClick = {
                                         navController.navigate(
-                                            Screen.Detail.createRoute(product.id)
+                                            Screen.Detail.createRoute(
+                                                product.id
+                                            )
                                         )
                                     },
                                     onAddToCart = { productToAddToCart = product }
@@ -220,19 +239,18 @@ fun HomeScreen(
             }
             if (isLoading && productList.isEmpty()) {
                 items(4) {
-                    Box(modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp)) {
-                        ShimmerProductItem()
-                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp)
+                    ) { ShimmerProductItem() }
                 }
             } else if (productList.isEmpty()) {
                 item(span = { GridItemSpan(2) }) { EmptyStateMessage() }
             } else {
                 itemsIndexed(
                     items = productList,
-                    key = { index, product -> "grid_${product.id}_$index" }
-                ) { index, product ->
+                    key = { index, product -> "grid_${product.id}_$index" }) { index, product ->
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -242,8 +260,7 @@ fun HomeScreen(
                             )
                     ) {
                         ProductItem(
-                            product = product,
-                            modifier = Modifier.fillMaxWidth(),
+                            product = product, modifier = Modifier.fillMaxWidth(),
                             onClick = { navController.navigate(Screen.Detail.createRoute(product.id)) },
                             onAddToCart = { productToAddToCart = product }
                         )
@@ -278,6 +295,7 @@ fun HomeScreen(
                 }
             )
         }
+
         if (showFilterSheet) {
             FilterBottomSheet(
                 currentSortBy = currentSortBy,
@@ -291,36 +309,160 @@ fun HomeScreen(
                 }
             )
         }
+        if (showSupportSheet) {
+            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            ModalBottomSheet(
+                onDismissRequest = { showSupportSheet = false },
+                sheetState = sheetState,
+                containerColor = Color.White,
+                dragHandle = { BottomSheetDefaults.DragHandle() }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 8.dp)
+                        .padding(bottom = 32.dp)
+                ) {
+                    Text(
+                        text = "Bạn cần hỗ trợ gì?",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = GunplaBlue,
+                        modifier = Modifier.padding(bottom = 24.dp)
+                    )
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp)
+                            .clickable {
+                                showSupportSheet = false
+                                viewModel.getOrCreateSupportChat { channelId ->
+                                    navController.navigate("chat_detail/$channelId")
+                                }
+                            },
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F8FF)),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(0.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(GunplaBlue, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = Color.White
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    "Chat với CSKH",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = Color.Black
+                                )
+                                Text(
+                                    "Hỗ trợ đơn hàng, khiếu nại (8h-22h)",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp)
+                            .clickable {
+                                showSupportSheet = false
+                                navController.navigate("ai_chat_screen")
+                            },
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5)),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(0.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(Color(0xFFFF5252), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.SmartToy,
+                                    contentDescription = null,
+                                    tint = Color.White
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    "Trợ lý AI Thông minh",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = Color.Black
+                                )
+                                Text(
+                                    "Tư vấn chọn Gundam, dụng cụ",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                            Spacer(modifier = Modifier.weight(1f))
+                            Badge(containerColor = Color(0xFFFF5252)) {
+                                Text(
+                                    "MỚI",
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
 fun PaddingBox(content: @Composable () -> Unit) {
-    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-        content()
-    }
+    Box(modifier = Modifier.padding(horizontal = 16.dp)) { content() }
 }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HeaderSection(
-    navController: NavController,
-    unreadCount: Int
-) {
+fun HeaderSection(navController: NavController, unreadCount: Int) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(
                 brush = Brush.verticalGradient(
-                    colors = listOf(GunplaBlue, Color(0xFF1976D2))
+                    colors = listOf(
+                        GunplaBlue,
+                        Color(0xFF1976D2)
+                    )
                 )
             )
             .statusBarsPadding()
             .padding(vertical = 16.dp, horizontal = 16.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -335,24 +477,18 @@ fun HeaderSection(
                 Spacer(modifier = Modifier.width(12.dp))
                 Text("Tìm kiếm Gundam, Tool...", color = Color.Gray, fontSize = 14.sp)
             }
-
             Spacer(modifier = Modifier.width(16.dp))
-
             IconButton(
                 onClick = { navController.navigate("notification_screen") },
                 modifier = Modifier.size(48.dp)
             ) {
                 if (unreadCount > 0) {
-                    BadgedBox(
-                        badge = {
-                            Badge(
-                                containerColor = Color.Red,
-                                contentColor = Color.White
-                            ) {
-                                Text(text = if (unreadCount > 99) "99+" else unreadCount.toString())
-                            }
-                        }
-                    ) {
+                    BadgedBox(badge = {
+                        Badge(
+                            containerColor = Color.Red,
+                            contentColor = Color.White
+                        ) { Text(text = if (unreadCount > 99) "99+" else unreadCount.toString()) }
+                    }) {
                         Icon(
                             imageVector = Icons.Default.Notifications,
                             contentDescription = "Thông báo",
@@ -386,10 +522,8 @@ fun BannerSection() {
         Box {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
-                    .data("https://wallpaperaccess.com/full/19921.jpg")
-                    .crossfade(true)
-                    .size(800, 400)
-                    .build(),
+                    .data("https://wallpaperaccess.com/full/19921.jpg").crossfade(true)
+                    .size(800, 400).build(),
                 contentDescription = "Banner",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
@@ -431,8 +565,7 @@ fun CategorySection(selectedCategory: String, onCategorySelected: (String) -> Un
                 CategoryChip(
                     text = cat,
                     isSelected = cat == selectedCategory,
-                    onClick = { onCategorySelected(cat) }
-                )
+                    onClick = { onCategorySelected(cat) })
             }
         }
     }
@@ -496,6 +629,7 @@ fun EmptyStateMessage() {
         Text("Không tìm thấy sản phẩm nào", color = Color.Gray)
     }
 }
+
 @Composable
 fun ShimmerProductItem() {
     val transition = rememberInfiniteTransition(label = "")
@@ -503,8 +637,10 @@ fun ShimmerProductItem() {
         initialValue = 0f,
         targetValue = 1000f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
+            animation = tween(
+                durationMillis = 1000,
+                easing = FastOutSlowInEasing
+            ), repeatMode = RepeatMode.Restart
         ),
         label = ""
     )
@@ -513,9 +649,7 @@ fun ShimmerProductItem() {
             Color.LightGray.copy(alpha = 0.6f),
             Color.LightGray.copy(alpha = 0.2f),
             Color.LightGray.copy(alpha = 0.6f)
-        ),
-        start = Offset(10f, 10f),
-        end = Offset(translateAnim, translateAnim)
+        ), start = Offset(10f, 10f), end = Offset(translateAnim, translateAnim)
     )
     Card(
         modifier = Modifier
@@ -532,27 +666,34 @@ fun ShimmerProductItem() {
                 .weight(1f)
                 .background(brush))
             Spacer(modifier = Modifier.height(12.dp))
-            Box(modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .height(16.dp)
-                .padding(horizontal = 8.dp)
-                .background(brush))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .height(16.dp)
+                    .padding(horizontal = 8.dp)
+                    .background(brush)
+            )
             Spacer(modifier = Modifier.height(8.dp))
-            Box(modifier = Modifier
-                .fillMaxWidth(0.6f)
-                .height(16.dp)
-                .padding(horizontal = 8.dp)
-                .background(brush))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.6f)
+                    .height(16.dp)
+                    .padding(horizontal = 8.dp)
+                    .background(brush)
+            )
             Spacer(modifier = Modifier.height(12.dp))
-            Box(modifier = Modifier
-                .fillMaxWidth(0.5f)
-                .height(20.dp)
-                .padding(horizontal = 8.dp)
-                .background(brush))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.5f)
+                    .height(20.dp)
+                    .padding(horizontal = 8.dp)
+                    .background(brush)
+            )
             Spacer(modifier = Modifier.height(12.dp))
         }
     }
 }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilterBottomSheet(
@@ -564,10 +705,7 @@ fun FilterBottomSheet(
     onApply: (sortBy: String, isAsc: Boolean, minPrice: Long?, maxPrice: Long?) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    var selectedSort by remember {
-        mutableStateOf(if(currentSortBy == "price") if(currentIsAscending) 1 else 2 else 0)
-    }
+    var selectedSort by remember { mutableStateOf(if (currentSortBy == "price") if (currentIsAscending) 1 else 2 else 0) }
     var selectedPriceRange by remember {
         mutableStateOf(
             when {
@@ -587,7 +725,6 @@ fun FilterBottomSheet(
         containerColor = Color.White
     ) {
         Column(modifier = Modifier.padding(bottom = 32.dp)) {
-
             Text(
                 "SẮP XẾP THEO",
                 fontWeight = FontWeight.Bold,
@@ -600,13 +737,26 @@ fun FilterBottomSheet(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item { FilterChip(selected = selectedSort == 0, onClick = { selectedSort = 0 }, label = { Text("Mới nhất") }) }
-                item { FilterChip(selected = selectedSort == 1, onClick = { selectedSort = 1 }, label = { Text("Giá: Thấp -> Cao") }) }
-                item { FilterChip(selected = selectedSort == 2, onClick = { selectedSort = 2 }, label = { Text("Giá: Cao -> Thấp") }) }
+                item {
+                    FilterChip(
+                        selected = selectedSort == 0,
+                        onClick = { selectedSort = 0 },
+                        label = { Text("Mới nhất") })
+                }
+                item {
+                    FilterChip(
+                        selected = selectedSort == 1,
+                        onClick = { selectedSort = 1 },
+                        label = { Text("Giá: Thấp -> Cao") })
+                }
+                item {
+                    FilterChip(
+                        selected = selectedSort == 2,
+                        onClick = { selectedSort = 2 },
+                        label = { Text("Giá: Cao -> Thấp") })
+                }
             }
-
             Spacer(modifier = Modifier.height(24.dp))
-
             Text(
                 "KHOẢNG GIÁ",
                 fontWeight = FontWeight.Bold,
@@ -619,44 +769,66 @@ fun FilterBottomSheet(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item { FilterChip(selected = selectedPriceRange == 0, onClick = { selectedPriceRange = 0 }, label = { Text("Tất cả") }) }
-                item { FilterChip(selected = selectedPriceRange == 1, onClick = { selectedPriceRange = 1 }, label = { Text("Dưới 500k") }) }
-                item { FilterChip(selected = selectedPriceRange == 2, onClick = { selectedPriceRange = 2 }, label = { Text("500k - 1tr5") }) }
-                item { FilterChip(selected = selectedPriceRange == 3, onClick = { selectedPriceRange = 3 }, label = { Text("1tr5 - 3tr") }) }
-                item { FilterChip(selected = selectedPriceRange == 4, onClick = { selectedPriceRange = 4 }, label = { Text("3tr - 5tr") }) }
-                item { FilterChip(selected = selectedPriceRange == 5, onClick = { selectedPriceRange = 5 }, label = { Text("Trên 5tr") }) }
+                item {
+                    FilterChip(
+                        selected = selectedPriceRange == 0,
+                        onClick = { selectedPriceRange = 0 },
+                        label = { Text("Tất cả") })
+                }
+                item {
+                    FilterChip(
+                        selected = selectedPriceRange == 1,
+                        onClick = { selectedPriceRange = 1 },
+                        label = { Text("Dưới 500k") })
+                }
+                item {
+                    FilterChip(
+                        selected = selectedPriceRange == 2,
+                        onClick = { selectedPriceRange = 2 },
+                        label = { Text("500k - 1tr5") })
+                }
+                item {
+                    FilterChip(
+                        selected = selectedPriceRange == 3,
+                        onClick = { selectedPriceRange = 3 },
+                        label = { Text("1tr5 - 3tr") })
+                }
+                item {
+                    FilterChip(
+                        selected = selectedPriceRange == 4,
+                        onClick = { selectedPriceRange = 4 },
+                        label = { Text("3tr - 5tr") })
+                }
+                item {
+                    FilterChip(
+                        selected = selectedPriceRange == 5,
+                        onClick = { selectedPriceRange = 5 },
+                        label = { Text("Trên 5tr") })
+                }
             }
-
             Spacer(modifier = Modifier.height(32.dp))
             Button(
                 onClick = {
                     val sortBy = if (selectedSort == 0) "createdAt" else "price"
                     val isAsc = selectedSort == 1
-                    val minP = when(selectedPriceRange) {
-                        2 -> 500000L
-                        3 -> 1500000L
-                        4 -> 3000000L
-                        5 -> 5000000L
-                        else -> null
+                    val minP = when (selectedPriceRange) {
+                        2 -> 500000L; 3 -> 1500000L; 4 -> 3000000L; 5 -> 5000000L; else -> null
                     }
-                    val maxP = when(selectedPriceRange) {
-                        1 -> 500000L
-                        2 -> 1500000L
-                        3 -> 3000000L
-                        4 -> 5000000L
-                        else -> null
+                    val maxP = when (selectedPriceRange) {
+                        1 -> 500000L; 2 -> 1500000L; 3 -> 3000000L; 4 -> 5000000L; else -> null
                     }
-
                     onApply(sortBy, isAsc, minP, maxP)
                 },
-                modifier = Modifier.fillMaxWidth().height(50.dp).padding(horizontal = 16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .padding(horizontal = 16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue)
-            ) {
-                Text("ÁP DỤNG", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            }
+            ) { Text("ÁP DỤNG", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
         }
     }
 }
+
 @Composable
 fun ActiveFiltersRow(
     viewModel: HomeViewModel,
@@ -671,7 +843,9 @@ fun ActiveFiltersRow(
 
     if (hasSortFilter || hasPriceFilter) {
         LazyRow(
-            modifier = modifier.fillMaxWidth().padding(bottom = 8.dp),
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -689,11 +863,12 @@ fun ActiveFiltersRow(
                         onClick = { viewModel.clearPriceFilter() },
                         label = { Text(priceLabel, fontSize = 12.sp) },
                         trailingIcon = { Icon(Icons.Default.Close, "Xóa", Modifier.size(16.dp)) },
-                        colors = AssistChipDefaults.assistChipColors(containerColor = GunplaBlue.copy(alpha = 0.1f), labelColor = GunplaBlue)
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = GunplaBlue.copy(alpha = 0.1f), labelColor = GunplaBlue
+                        )
                     )
                 }
             }
-
             if (hasSortFilter) {
                 val sortLabel = if (currentIsAscending) "Giá tăng dần" else "Giá giảm dần"
                 item {
@@ -701,7 +876,9 @@ fun ActiveFiltersRow(
                         onClick = { viewModel.clearSortFilter() },
                         label = { Text(sortLabel, fontSize = 12.sp) },
                         trailingIcon = { Icon(Icons.Default.Close, "Xóa", Modifier.size(16.dp)) },
-                        colors = AssistChipDefaults.assistChipColors(containerColor = GunplaBlue.copy(alpha = 0.1f), labelColor = GunplaBlue)
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = GunplaBlue.copy(alpha = 0.1f), labelColor = GunplaBlue
+                        )
                     )
                 }
             }

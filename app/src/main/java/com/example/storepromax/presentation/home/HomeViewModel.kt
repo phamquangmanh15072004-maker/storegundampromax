@@ -35,10 +35,12 @@ class HomeViewModel @Inject constructor(
 
     private val _selectedCategory = MutableStateFlow("All")
     val selectedCategory = _selectedCategory.asStateFlow()
+
     private var lastDocument: DocumentSnapshot? = null
     var isLastPage = false
     var isPaginating = false
     private val pageSize = 4L
+
     private val _currentSortBy = MutableStateFlow("createdAt")
     val currentSortBy = _currentSortBy.asStateFlow()
 
@@ -54,28 +56,6 @@ class HomeViewModel @Inject constructor(
     init {
         loadGlobalNewArrivals()
         loadInitialProducts()
-        runDatabaseMigrationFor3DModels()
-    }
-
-    fun runDatabaseMigrationFor3DModels() {
-        viewModelScope.launch {
-            try {
-                val db = FirebaseFirestore.getInstance()
-                val snapshot = db.collection("products").get().await()
-                var updatedCount = 0
-                for (document in snapshot.documents) {
-                    val url = document.getString("model3DUrl")
-                    val isActually3D = !url.isNullOrBlank()
-                    db.collection("products").document(document.id)
-                        .update("has3D", isActually3D)
-                        .await()
-                    updatedCount++
-                }
-                println("Đã tự động cập nhật has3D cho $updatedCount sản phẩm thành công!")
-            } catch (e: Exception) {
-                println("Lỗi Migration: ${e.message}")
-            }
-        }
     }
 
     fun loadInitialProducts(category: String = _selectedCategory.value) {
@@ -97,7 +77,6 @@ class HomeViewModel @Inject constructor(
                     lastDocument = lastDoc
                     if (list.size < pageSize) isLastPage = true
                     _products.value = _allProducts.toList()
-
                     _isLoading.value = false
                 }.onFailure {
                     _isLoading.value = false
@@ -149,16 +128,7 @@ class HomeViewModel @Inject constructor(
         loadInitialProducts(category)
     }
 
-    private fun filterProducts(category: String) {
-        val filteredList = when (category) {
-            "All" -> _allProducts
-            "3D Model" -> _allProducts.filter { !it.model3DUrl.isNullOrBlank() }
-            else -> _allProducts.filter { it.category.equals(category, ignoreCase = true) }
-        }
-        _products.value = filteredList
-    }
-
-    fun contactSupport(onSuccess: (String) -> Unit) {
+    fun getOrCreateSupportChat(onSuccess: (String) -> Unit) {
         viewModelScope.launch {
             val result = chatRepo.getOrCreateSupportChannel()
             result.onSuccess { channelId ->
@@ -173,6 +143,7 @@ class HomeViewModel @Inject constructor(
             onSuccess()
         }
     }
+
     fun applyFilterAndSort(sortBy: String, isAsc: Boolean, min: Long?, max: Long?) {
         _currentSortBy.value = sortBy
         _currentIsAscending.value = isAsc

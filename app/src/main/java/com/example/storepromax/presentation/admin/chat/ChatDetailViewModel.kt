@@ -81,7 +81,13 @@ class ChatDetailViewModel @Inject constructor(
 
         viewModelScope.launch {
             firestore.collection("channels").document(channelId).collection("messages").document(messageId).set(newMessage)
-            firestore.collection("channels").document(channelId).update("lastMessage", content, "lastMessageTime", System.currentTimeMillis())
+            firestore.collection("channels").document(channelId).update(
+                mapOf(
+                    "lastMessage" to content,
+                    "lastUpdated" to System.currentTimeMillis(),
+                    "lastSenderId" to currentUserId
+                )
+            )
         }
     }
 
@@ -102,7 +108,14 @@ class ChatDetailViewModel @Inject constructor(
                 )
 
                 firestore.collection("channels").document(channelId).collection("messages").document(messageId).set(newMessage)
-                firestore.collection("channels").document(channelId).update("lastMessage", content, "lastMessageTime", System.currentTimeMillis())
+
+                firestore.collection("channels").document(channelId).update(
+                    mapOf(
+                        "lastMessage" to content,
+                        "lastUpdated" to System.currentTimeMillis(),
+                        "lastSenderId" to currentUserId
+                    )
+                )
             }
             _uploadingMedia.value = null
         }

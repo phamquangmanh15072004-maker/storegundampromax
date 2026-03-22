@@ -3,6 +3,7 @@ package com.example.storepromax.domain.repository
 import com.example.storepromax.domain.model.ChatChannel
 import com.example.storepromax.domain.model.ChatMessage
 import com.example.storepromax.domain.model.Product
+import com.example.storepromax.domain.model.ProductReview
 import kotlinx.coroutines.flow.Flow
 
 interface ChatRepository {
@@ -19,6 +20,5 @@ interface ChatRepository {
         mediaUrl: String = "",
         isAdmin: Boolean
     ): Result<Boolean>
-
     suspend fun getOrCreateUserChat(targetUserId: String, targetUserName: String, initialContent: String): Result<String>
 }

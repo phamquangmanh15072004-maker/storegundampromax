@@ -40,21 +40,20 @@ import java.text.DecimalFormat
 @Composable
 fun CartScreen(
     navController: NavController,
-    viewModel: CartViewModel = hiltViewModel()
+    viewModel: CartViewModel = hiltViewModel(),
+    showBackBtn: Boolean = false
 ) {
     val cartItems by viewModel.cartItems.collectAsState()
     val totalPrice by viewModel.totalPrice.collectAsState()
-
-    // --- BẢNG MÀU LIGHT THEME ---
-    val bgLight = Color(0xFFF5F5F5)        // Nền xám nhạt sáng sủa
-    val cardBg = Color.White               // Thẻ màu trắng
-    val textPrimary = Color.Black          // Chữ chính màu đen
-    val textSecondary = Color.Gray         // Chữ phụ màu xám
-    val cyberBlue = Color(0xFF007AFF)      // Xanh dương đậm hơn chút cho rõ trên nền trắng
-    val alertRed = Color(0xFFFF3B30)       // Đỏ tươi
+    val bgLight = Color(0xFFF5F5F5)
+    val cardBg = Color.White
+    val textPrimary = Color.Black
+    val textSecondary = Color.Gray
+    val cyberBlue = Color(0xFF007AFF)
+    val alertRed = Color(0xFFFF3B30)
 
     Scaffold(
-        containerColor = bgLight, // 🔥 Đổi nền thành sáng
+        containerColor = bgLight,
         topBar = {
             TopAppBar(
                 title = {
@@ -62,9 +61,20 @@ fun CartScreen(
                         "Giỏ Hàng",
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
-                        color = textPrimary, // 🔥 Chữ đen
+                        color = textPrimary,
                         fontSize = 20.sp
                     )
+                },
+                navigationIcon = {
+                    if (showBackBtn) {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Quay lại",
+                                tint = textPrimary
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = bgLight)
             )

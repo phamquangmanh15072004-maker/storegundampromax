@@ -3,6 +3,7 @@ package com.example.storepromax.data.repository
 import com.example.storepromax.data.local.dao.HistoryDao
 import com.example.storepromax.data.local.entity.HistoryEntity
 import com.example.storepromax.domain.model.Product
+import com.example.storepromax.domain.model.ProductReview
 import com.example.storepromax.domain.repository.ProductRepository
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
@@ -264,6 +265,34 @@ class ProductRepositoryImpl @Inject constructor(
 
             Result.success(Pair(products, newLastDoc))
         } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    override suspend fun getProductReviews(productId: String): Result<List<ProductReview>> {
+        return try {
+            val snapshot = firestore.collection("products")
+                .document(productId)
+                .collection("reviews")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .get()
+                .await()
+
+            val reviews = snapshot.documents.mapNotNull { doc ->
+                ProductReview(
+                    id = doc.id,
+                    userId = doc.getString("userId") ?: "",
+                    userName = doc.getString("userName") ?: "Khách hàng ẩn danh",
+                    rating = doc.getLong("rating")?.toInt() ?: 5,
+                    comment = doc.getString("comment") ?: "",
+                    timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
+                )
+            }
+            Result.success(reviews)
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "FirebaseError",
+                "Lỗi lấy đánh giá cho sản phẩm $productId: ${e.message}"
+            )
             Result.failure(e)
         }
     }

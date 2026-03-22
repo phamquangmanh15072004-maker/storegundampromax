@@ -1,6 +1,7 @@
 package com.example.storepromax.domain.repository
 
 import com.example.storepromax.domain.model.Product
+import com.example.storepromax.domain.model.ProductReview
 import com.google.firebase.firestore.DocumentSnapshot
 import kotlinx.coroutines.flow.Flow
 
@@ -29,4 +30,5 @@ interface ProductRepository {
         minPrice: Long? = null,
         maxPrice: Long? = null
     ): Result<Pair<List<Product>, DocumentSnapshot?>>
+    suspend fun getProductReviews(productId: String): Result<List<ProductReview>>
 }

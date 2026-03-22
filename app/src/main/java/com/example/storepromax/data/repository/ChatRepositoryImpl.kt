@@ -2,6 +2,7 @@ package com.example.storepromax.data.repository
 
 import com.example.storepromax.domain.model.ChatChannel
 import com.example.storepromax.domain.model.ChatMessage
+import com.example.storepromax.domain.model.ProductReview
 import com.example.storepromax.domain.repository.ChatRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -22,7 +23,9 @@ class ChatRepositoryImpl @Inject constructor(
             .whereEqualTo("type", "SUPPORT")
             .orderBy("lastUpdated", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) { close(error); return@addSnapshotListener }
+                if (error != null) {
+                    close(error); return@addSnapshotListener
+                }
                 val channels = snapshot?.documents?.mapNotNull { doc ->
                     doc.toObject(ChatChannel::class.java)?.copy(id = doc.id)
                 } ?: emptyList()
@@ -36,7 +39,9 @@ class ChatRepositoryImpl @Inject constructor(
             .collection("messages")
             .orderBy("timestamp", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) { close(error); return@addSnapshotListener }
+                if (error != null) {
+                    close(error); return@addSnapshotListener
+                }
                 val messages = snapshot?.documents?.mapNotNull { doc ->
                     doc.toObject(ChatMessage::class.java)?.copy(id = doc.id)
                 } ?: emptyList()
@@ -70,12 +75,14 @@ class ChatRepositoryImpl @Inject constructor(
                 .add(message)
                 .await()
 
-            val lastMessagePreview = if (type == "TEXT") content else if (type == "IMAGE") "[Hình ảnh]" else "[Video]"
+            val lastMessagePreview =
+                if (type == "TEXT") content else if (type == "IMAGE") "[Hình ảnh]" else "[Video]"
 
             firestore.collection("channels").document(channelId).update(
                 mapOf(
                     "lastMessage" to lastMessagePreview,
-                    "lastUpdated" to System.currentTimeMillis()
+                    "lastUpdated" to System.currentTimeMillis(),
+                    "lastSenderId" to senderId
                 )
             ).await()
 
@@ -86,7 +93,10 @@ class ChatRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun updateChannelStatus(channelId: String, newStatus: String): Result<Boolean> {
+    override suspend fun updateChannelStatus(
+        channelId: String,
+        newStatus: String
+    ): Result<Boolean> {
         return try {
             firestore.collection("channels").document(channelId)
                 .update("status", newStatus).await()
@@ -103,10 +113,13 @@ class ChatRepositoryImpl @Inject constructor(
             .whereArrayContains("participants", currentUserId)
             .orderBy("lastUpdated", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) { close(error); return@addSnapshotListener }
-                val channels = snapshot?.toObjects(ChatChannel::class.java)?.mapIndexed { index, item ->
-                    item.copy(id = snapshot.documents[index].id)
-                } ?: emptyList()
+                if (error != null) {
+                    close(error); return@addSnapshotListener
+                }
+                val channels =
+                    snapshot?.toObjects(ChatChannel::class.java)?.mapIndexed { index, item ->
+                        item.copy(id = snapshot.documents[index].id)
+                    } ?: emptyList()
                 trySend(channels)
             }
         awaitClose { subscription.remove() }
@@ -123,7 +136,8 @@ class ChatRepositoryImpl @Inject constructor(
             var sellerName = "Người bán"
             val sellerDoc = firestore.collection("users").document(sellerId).get().await()
             if (sellerDoc.exists()) {
-                sellerAvatar = sellerDoc.getString("avatarUrl") ?: sellerDoc.getString("userAvatar") ?: ""
+                sellerAvatar =
+                    sellerDoc.getString("avatarUrl") ?: sellerDoc.getString("userAvatar") ?: ""
                 sellerName = sellerDoc.getString("displayName") ?: "Người bán"
             }
 
@@ -144,7 +158,13 @@ class ChatRepositoryImpl @Inject constructor(
             )
 
             val ref = firestore.collection("channels").add(newChannel).await()
-            sendMessage(ref.id, "Chào bạn, mình muốn hỏi về sản phẩm ${product.name}", "TEXT", "", isAdmin = false)
+            sendMessage(
+                ref.id,
+                "Chào bạn, mình muốn hỏi về sản phẩm ${product.name}",
+                "TEXT",
+                "",
+                isAdmin = false
+            )
 
             Result.success(ref.id)
         } catch (e: Exception) {
@@ -157,7 +177,7 @@ class ChatRepositoryImpl @Inject constructor(
             val userId = auth.currentUser?.uid ?: return Result.failure(Exception("Chưa đăng nhập"))
 
             val existingChat = firestore.collection("channels")
-                .whereArrayContains("participants", userId)
+                .whereEqualTo("userId", userId)
                 .whereEqualTo("type", "SUPPORT")
                 .get().await()
 
@@ -166,30 +186,26 @@ class ChatRepositoryImpl @Inject constructor(
             }
 
             val currentUser = auth.currentUser
-            val displayName = if (!currentUser?.displayName.isNullOrBlank()) {
-                currentUser?.displayName!!
-            } else {
-                currentUser?.email ?: "Khách hàng"
-            }
+            val displayName = currentUser?.displayName?.ifBlank { "Khách hàng" } ?: "Khách hàng"
 
             val newChannel = ChatChannel(
-                participants = listOf(userId, "ADMIN_ID"),
+                participants = listOf(userId),
                 type = "SUPPORT",
                 userId = userId,
                 userName = displayName,
                 userAvatar = currentUser?.photoUrl?.toString() ?: "",
                 lastMessage = "Yêu cầu hỗ trợ mới",
-                lastUpdated = System.currentTimeMillis(),
-                status = "PENDING"
+                lastUpdated = System.currentTimeMillis()
             )
 
             val ref = firestore.collection("channels").add(newChannel).await()
 
             val welcomeMsg = ChatMessage(
-                senderId = "ADMIN_ID",
+                senderId = "SYSTEM_BOT",
                 content = "Chào bạn! StorePro có thể giúp gì cho bạn?",
                 isAdmin = true,
-                timestamp = System.currentTimeMillis()
+                timestamp = System.currentTimeMillis(),
+                type = "TEXT"
             )
 
             firestore.collection("channels").document(ref.id)
@@ -225,7 +241,8 @@ class ChatRepositoryImpl @Inject constructor(
             var partnerAvatar = ""
             val partnerDoc = firestore.collection("users").document(targetUserId).get().await()
             if (partnerDoc.exists()) {
-                partnerAvatar = partnerDoc.getString("avatarUrl") ?: partnerDoc.getString("userAvatar") ?: ""
+                partnerAvatar =
+                    partnerDoc.getString("avatarUrl") ?: partnerDoc.getString("userAvatar") ?: ""
             }
 
             val currentUser = auth.currentUser
@@ -252,4 +269,6 @@ class ChatRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+
+
 }

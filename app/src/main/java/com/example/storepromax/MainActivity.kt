@@ -1,5 +1,6 @@
 package com.example.storepromax
 
+import AIChatScreen
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -41,6 +42,7 @@ import com.example.storepromax.presentation.detail.DetailScreen
 import com.example.storepromax.presentation.detail.Model3DScreen
 import com.example.storepromax.presentation.feed.CreatePostScreen
 import com.example.storepromax.presentation.feed.FeedScreen
+import com.example.storepromax.presentation.feed.PostDetailScreen
 import com.example.storepromax.presentation.login.LoginScreen
 import com.example.storepromax.presentation.main.MainScreen
 import com.example.storepromax.presentation.navigation.Screen
@@ -315,8 +317,18 @@ class MainActivity : ComponentActivity() {
                             quantity = if (quantity != -1) quantity else null
                         )
                     }
-                    composable("cart_screen") {
-                        CartScreen(navController = navController)
+                    composable(
+                        route = "cart_screen?showBack={showBack}",
+                        arguments = listOf(
+                            navArgument("showBack") {
+                                type = NavType.BoolType
+                                defaultValue = false
+                            }
+                        )
+                    ) { backStackEntry ->
+                        val showBack = backStackEntry.arguments?.getBoolean("showBack") ?: false
+
+                        CartScreen(navController = navController, showBackBtn = showBack)
                     }
                     composable("recentlyviewed_screen") {
                         RecentlyViewedScreen(navController = navController)
@@ -376,6 +388,16 @@ class MainActivity : ComponentActivity() {
                         NotificationScreen(
                             navController = navController
                         )
+                    }
+                    composable("ai_chat_screen") {
+                        AIChatScreen(navController = navController)
+                    }
+                    composable(
+                        route = "post_detail/{postId}",
+                        arguments = listOf(navArgument("postId") { type = NavType.StringType })
+                    ) { backStackEntry ->
+                        val postId = backStackEntry.arguments?.getString("postId") ?: ""
+                        PostDetailScreen(navController = navController, postId = postId)
                     }
                 }
             }

@@ -21,6 +21,7 @@ data class ChatChannel(
     val type: String = "SUPPORT",
     val blockedBy: List<String> = emptyList(),
     val receiverAvatar: String = "",
+    val lastSenderId: String = ""
 )
 data class ChatMessage(
     val id: String = "",

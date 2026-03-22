@@ -9,20 +9,23 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.ChatChannel
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -32,20 +35,19 @@ fun AdminChatListScreen(
     navController: NavController,
     viewModel: AdminChatListViewModel = hiltViewModel()
 ) {
-    val pendingChats by viewModel.pendingChannels.collectAsState()
-    val processingChats by viewModel.processingChannels.collectAsState()
-    val solvedChats by viewModel.solvedChannels.collectAsState()
+    val needsReplyChats by viewModel.needsReplyChannels.collectAsState()
+    val allChats by viewModel.allChannels.collectAsState()
 
-    var selectedTabIndex by remember { mutableStateOf(0) }
-    val tabs = listOf("Chờ xử lý", "Đang chat", "Lịch sử")
+    var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
+    val tabs = listOf("Cần phản hồi", "Tất cả")
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("CSKH - Tin nhắn", fontWeight = FontWeight.Bold) },
+                title = { Text("Quản lý CSKH", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
@@ -60,21 +62,20 @@ fun AdminChatListScreen(
                 contentColor = Color(0xFF007AFF)
             ) {
                 tabs.forEachIndexed { index, title ->
-                    val count = when(index) {
-                        0 -> pendingChats.size
-                        1 -> processingChats.size
-                        else -> 0
-                    }
+                    val count = if (index == 0) needsReplyChats.size else 0
 
                     Tab(
                         selected = selectedTabIndex == index,
                         onClick = { selectedTabIndex = index },
                         text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(title)
+                                Text(
+                                    title,
+                                    fontWeight = if (selectedTabIndex == index) FontWeight.Bold else FontWeight.Normal
+                                )
                                 if (count > 0) {
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Badge(containerColor = if(index==0) Color.Red else Color.Blue) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Badge(containerColor = Color.Red) {
                                         Text("$count", color = Color.White)
                                     }
                                 }
@@ -84,12 +85,7 @@ fun AdminChatListScreen(
                 }
             }
 
-            // Danh sách Chat
-            val currentList = when (selectedTabIndex) {
-                0 -> pendingChats
-                1 -> processingChats
-                else -> solvedChats
-            }
+            val currentList = if (selectedTabIndex == 0) needsReplyChats else allChats
 
             if (currentList.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -100,11 +96,11 @@ fun AdminChatListScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(currentList) { channel ->
-                        ChatChannelItem(
+                    items(currentList, key = { it.id }) { channel ->
+                        AdminChatChannelItem(
                             channel = channel,
                             onClick = {
-                                navController.navigate("admin_chat_detail/${channel.id}")
+                                navController.navigate("chat_detail/${channel.id}")
                             }
                         )
                     }
@@ -115,34 +111,52 @@ fun AdminChatListScreen(
 }
 
 @Composable
-fun ChatChannelItem(channel: ChatChannel, onClick: () -> Unit) {
+fun AdminChatChannelItem(channel: ChatChannel, onClick: () -> Unit) {
     val timeFormat = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault())
-    val timeString = try { timeFormat.format(Date(channel.lastUpdated)) } catch (e: Exception) { "" }
+    val timeString = try {
+        timeFormat.format(Date(channel.lastUpdated))
+    } catch (e: Exception) {
+        ""
+    }
+
+    val displayImage = if (channel.userAvatar.isNotBlank()) {
+        channel.userAvatar
+    } else {
+        val safeName = URLEncoder.encode(channel.userName.ifBlank { "User" }, "UTF-8")
+        "https://ui-avatars.com/api/?name=$safeName&background=random"
+    }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth().clickable { onClick() }
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = CircleShape,
-                color = Color(0xFFE0E0E0),
-                modifier = Modifier.size(50.dp)
-            ) {
-                Icon(Icons.Default.Person, contentDescription = null, tint = Color.Gray, modifier = Modifier.padding(10.dp))
-            }
+            AsyncImage(
+                model = displayImage,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(CircleShape)
+                    .background(Color.LightGray)
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Text(
-                        text = channel.userName.ifBlank { "Khách hàng ẩn danh" },
+                        text = channel.userName.ifBlank { "Khách hàng" },
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
@@ -157,12 +171,6 @@ fun ChatChannelItem(channel: ChatChannel, onClick: () -> Unit) {
                     color = Color.DarkGray,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
-                )
-            }
-            if (channel.status == "PENDING") {
-                Spacer(modifier = Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier.size(10.dp).clip(CircleShape).background(Color.Red)
                 )
             }
         }
