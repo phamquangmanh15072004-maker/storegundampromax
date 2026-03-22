@@ -15,3 +15,5 @@
 local.properties
 # Firebase / Google secrets
 app/src/main/res/raw/service_account.json
+# Bỏ qua thư mục log của Kotlin
+.kotlin/
