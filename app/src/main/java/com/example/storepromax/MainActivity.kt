@@ -45,6 +45,7 @@ import com.example.storepromax.presentation.feed.FeedScreen
 import com.example.storepromax.presentation.feed.PostDetailScreen
 import com.example.storepromax.presentation.login.LoginScreen
 import com.example.storepromax.presentation.main.MainScreen
+import com.example.storepromax.presentation.main.MainViewModel
 import com.example.storepromax.presentation.navigation.Screen
 import com.example.storepromax.presentation.notification.NotificationScreen
 import com.example.storepromax.presentation.order.OrderHistoryScreen

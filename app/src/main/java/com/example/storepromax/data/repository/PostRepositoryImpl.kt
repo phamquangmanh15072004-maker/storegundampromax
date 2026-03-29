@@ -2,6 +2,7 @@ package com.example.storepromax.data.repository
 
 import com.example.storepromax.data.local.dao.HistoryDao
 import com.example.storepromax.data.local.entity.HistoryEntity
+import com.example.storepromax.domain.model.Comment
 import com.example.storepromax.domain.model.Post
 import com.example.storepromax.domain.model.User
 import com.example.storepromax.domain.repository.PostRepository
@@ -67,11 +68,24 @@ class PostRepositoryImpl @Inject constructor(
         awaitClose { listener.remove() }
     }
 
-    override suspend fun deletePost(postId: String): Result<Boolean> {
+    override suspend fun deletePost(postId: String): Result<Unit> {
         return try {
-            firestore.collection("posts").document(postId).delete().await()
-            Result.success(true)
+            val db = FirebaseFirestore.getInstance()
+            val batch = db.batch()
+            val postRef = db.collection("posts").document(postId)
+            batch.delete(postRef)
+            val commentsSnapshot = db.collection("comments")
+                .whereEqualTo("postId", postId)
+                .get()
+                .await()
+            for (doc in commentsSnapshot.documents) {
+                batch.delete(doc.reference)
+            }
+            batch.commit().await()
+
+            Result.success(Unit)
         } catch (e: Exception) {
+            e.printStackTrace()
             Result.failure(e)
         }
     }
@@ -190,8 +204,99 @@ class PostRepositoryImpl @Inject constructor(
             }
         }
     }
-
     override suspend fun clearViewHistory() {
         historyDao.clearHistory()
+    }
+    override fun searchPosts(query: String): Flow<List<Post>> = callbackFlow {
+        val keyword = query.lowercase().trim()
+
+        val subscription = firestore.collection("posts")
+            .whereEqualTo("status", "APPROVED")
+            .whereArrayContains("searchKeywords", keyword)
+            .limit(20)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val posts = snapshot.toObjects(Post::class.java).sortedByDescending { it.createdAt }
+                    trySend(posts).isSuccess
+                }
+            }
+        awaitClose { subscription.remove() }
+    }
+    override fun getCommentsForPost(postId: String): Flow<List<Comment>> = callbackFlow {
+        val subscription = firestore.collection("comments")
+            .whereEqualTo("postId", postId)
+            .orderBy("createdAt", Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshot != null) {
+                    val comments = snapshot.documents.mapNotNull { doc ->
+                        doc.toObject(Comment::class.java)?.copy(id = doc.id)
+                    }
+                    trySend(comments).isSuccess
+                }
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    override suspend fun addComment(postId: String, comment: Comment): Result<Unit> {
+        return try {
+            val db = FirebaseFirestore.getInstance()
+            val commentRef = db.collection("comments").document()
+            val postRef = db.collection("posts").document(postId)
+
+            val finalComment = comment.copy(id = commentRef.id)
+
+            db.runBatch { batch ->
+                batch.set(commentRef, finalComment)
+
+                batch.update(postRef, "commentCount", FieldValue.increment(1))
+            }.await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+    override suspend fun deleteComment(postId: String, commentId: String): Result<Unit> {
+        return try {
+            val db = FirebaseFirestore.getInstance()
+            val batch = db.batch()
+            val postRef = db.collection("posts").document(postId)
+            val commentRef = db.collection("comments").document(commentId)
+            batch.delete(commentRef)
+            val repliesSnapshot = db.collection("comments")
+                .whereEqualTo("parentId", commentId)
+                .get()
+                .await()
+            for (doc in repliesSnapshot.documents) {
+                batch.delete(doc.reference)
+            }
+            val totalDeleted = 1 + repliesSnapshot.documents.size
+            batch.update(postRef, "commentCount", com.google.firebase.firestore.FieldValue.increment(-totalDeleted.toLong()))
+            batch.commit().await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+    override suspend fun updateComment(commentId: String, newContent: String): Result<Unit> {
+        return try {
+            FirebaseFirestore.getInstance().collection("comments")
+                .document(commentId)
+                .update("content", newContent).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }

@@ -191,16 +191,14 @@ fun ProfileDetailScreen(
                                     selectedImageUrl = imageUrl
                                     showImageDialog = true
                                 },
-                                onChatClick = {
-                                    if (!isMe) {
-                                        viewModel.contactUser { cid ->
-                                            navController.navigate("chat_detail/$cid")
-                                        }
-                                    }
-                                },
                                 onUserClick = { userId ->
                                     if (userId != targetUserId) {
                                         navController.navigate("profile_detail/$userId")
+                                    }
+                                },
+                                onCommentClick = {
+                                    post.id?.let { postId ->
+                                        navController.navigate("post_detail/$postId")
                                     }
                                 }
                             )

@@ -14,5 +14,6 @@ data class UserNotification(
     @get:PropertyName("isRead")
     @set:PropertyName("isRead")
     var isRead: Boolean = false,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val postId: String? = null,
 )

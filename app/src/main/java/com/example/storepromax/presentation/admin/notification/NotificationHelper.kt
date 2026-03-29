@@ -61,7 +61,14 @@ object NotificationHelper {
             else -> return@withContext
         }
 
-        saveToFirestore(userId, title, body, status, orderId, action)
+        saveToFirestore(
+            userId = userId,
+            title = title,
+            body = body,
+            type = "ORDER_UPDATE",
+            orderId = orderId,
+            action = action
+        )
 
         if(userToken.isNotEmpty()){
             try {
@@ -112,24 +119,27 @@ object NotificationHelper {
         title: String,
         body: String,
         type: String,
-        orderId: String,
-        action: String
+        orderId: String? = null,
+        postId: String? = null,
+        action: String = ""
     ) {
         try {
             val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
             val notifRef = db.collection("users").document(userId).collection("notifications").document()
-
-            val notificationData = hashMapOf(
+            val notificationData = hashMapOf<String, Any>(
                 "id" to notifRef.id,
                 "userId" to userId,
                 "title" to title,
                 "body" to body,
                 "type" to type,
-                "orderId" to orderId,
-                "action" to action.ifEmpty { null },
                 "isRead" to false,
                 "timestamp" to System.currentTimeMillis()
             )
+            orderId?.let { notificationData["orderId"] = it }
+            postId?.let { notificationData["postId"] = it }
+            if (action.isNotEmpty()) {
+                notificationData["action"] = action
+            }
 
             notifRef.set(notificationData).await()
             Log.d("NOTIFICATION", "Đã lưu Database thành công cho user: $userId")
@@ -258,6 +268,106 @@ object NotificationHelper {
         } catch (e: Exception) {
             e.printStackTrace()
             Log.e("FCM_CHECK", "❌ LỖI API GOOGLE (ADMIN): ${e.message}")
+        }
+    }
+    suspend fun sendCommentNotification(
+        context: Context,
+        receiverToken: String,
+        title: String,
+        body: String,
+        postId: String,
+        receiverUserId: String
+    ) = withContext(Dispatchers.IO) {
+        saveToFirestore(
+            userId = receiverUserId,
+            title = title,
+            body = body,
+            type = "COMMENT",
+            orderId = null,
+            postId = postId
+        )
+        Log.e("MA_TRUI", "Hàm sendCommentNotification vừa bị gọi! Gửi tới: $receiverUserId")
+        if (receiverToken.isEmpty()) return@withContext
+
+        try {
+            val accessToken = getAccessToken(context)
+            val message = JSONObject()
+            val data = JSONObject()
+
+            data.put("title", title)
+            data.put("body", body)
+            data.put("type", "COMMENT")
+            data.put("postId", postId)
+
+            message.put("token", receiverToken)
+            message.put("data", data)
+
+            val finalJson = JSONObject().apply { put("message", message) }
+            val client = OkHttpClient()
+            val requestBody = finalJson.toString()
+                .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+            val request = Request.Builder()
+                .url(FCM_URL)
+                .addHeader("Authorization", "Bearer $accessToken")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
+
+            client.newCall(request).execute()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    suspend fun sendLikeNotification(
+        context: Context,
+        receiverToken: String,
+        receiverUserId: String,
+        senderName: String,
+        postTitle: String,
+        postId: String
+    ) = withContext(Dispatchers.IO) {
+        val title = "$senderName đã thích bài viết của bạn ❤️"
+        val body = "Bài viết: $postTitle"
+        saveToFirestore(
+            userId = receiverUserId,
+            title = title,
+            body = body,
+            type = "LIKE",
+            orderId = null,
+            postId = postId
+        )
+
+        if (receiverToken.isEmpty()) return@withContext
+
+        try {
+            val accessToken = getAccessToken(context)
+            val message = JSONObject()
+            val data = JSONObject()
+
+            data.put("title", title)
+            data.put("body", body)
+            data.put("type", "LIKE")
+            data.put("postId", postId)
+
+            message.put("token", receiverToken)
+            message.put("data", data)
+
+            val finalJson = JSONObject().apply { put("message", message) }
+            val client = OkHttpClient()
+            val requestBody = finalJson.toString()
+                .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+            val request = Request.Builder()
+                .url(FCM_URL)
+                .addHeader("Authorization", "Bearer $accessToken")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
+
+            client.newCall(request).execute()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

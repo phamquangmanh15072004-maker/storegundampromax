@@ -36,6 +36,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     private fun showNotification(title: String, body: String, type: String, data: Map<String, String>) {
+        Log.e("MA_TRUI", "Hàm showNotification vừa bị gọi! Type = $type")
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         val isChat = type.contains("CHAT")

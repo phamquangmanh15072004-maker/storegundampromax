@@ -30,15 +30,44 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
+import java.text.DecimalFormat
 
-@OptIn(ExperimentalMaterial3Api::class)
+class CurrencyAmountInputVisualTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val originalText = text.text.trim()
+        if (originalText.isEmpty()) {
+            return TransformedText(text, OffsetMapping.Identity)
+        }
+        val formattedText = try {
+            val number = originalText.toLong()
+            DecimalFormat("#,###").format(number).replace(",", ".")
+        } catch (e: Exception) {
+            originalText
+        }
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int {
+                return formattedText.length
+            }
+            override fun transformedToOriginal(offset: Int): Int {
+                return text.length
+            }
+        }
+        return TransformedText(AnnotatedString(formattedText), offsetMapping)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CreatePostScreen(
     navController: NavController,
@@ -50,7 +79,7 @@ fun CreatePostScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10)
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
-            viewModel.addImages(uris) // Cộng dồn ảnh
+            viewModel.addImages(uris)
         }
     }
 
@@ -80,158 +109,203 @@ fun CreatePostScreen(
                 )
             )
         },
-        containerColor = Color(0xFFF5F5F5)
+        containerColor = Color.White
     ) { padding ->
         Column(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Hình ảnh sản phẩm (${viewModel.selectedImages.value.size}/10)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(
+                        "Thêm ảnh",
+                        color = Color(0xFF00D4FF),
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            multiplePhotoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
 
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Hình ảnh sản phẩm (${viewModel.selectedImages.value.size})", fontWeight = FontWeight.Bold)
-                        Text(
-                            "Thêm ảnh",
-                            color = Color(0xFF00D4FF),
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.clickable {
-                                multiplePhotoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                            }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    if (viewModel.selectedImages.value.isNotEmpty()) {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(viewModel.selectedImages.value) { uri ->
-                                Box(modifier = Modifier.size(100.dp)) {
-                                    Image(
-                                        painter = rememberAsyncImagePainter(uri),
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                    IconButton(
-                                        onClick = { viewModel.removeImage(uri) },
-                                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(20.dp).background(Color.White, CircleShape)
-                                    ) {
-                                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.Red)
-                                    }
-                                }
-                            }
-                            item {
+                if (viewModel.selectedImages.value.isNotEmpty()) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(viewModel.selectedImages.value) { uri ->
+                            Box(modifier = Modifier.size(100.dp)) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(uri),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
                                 Box(
                                     modifier = Modifier
-                                        .size(100.dp)
-                                        .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
-                                        .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
-                                        .clickable { multiplePhotoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                        .align(Alignment.TopEnd)
+                                        .padding(4.dp)
+                                        .size(24.dp)
+                                        .background(Color.White.copy(alpha = 0.9f), CircleShape)
+                                        .clickable { viewModel.removeImage(uri) },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.Gray)
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Xóa",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = Color.Red
+                                    )
                                 }
                             }
                         }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                                .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
-                                .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
-                                .clickable { multiplePhotoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color(0xFF00D4FF), modifier = Modifier.size(32.dp))
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text("Bấm để tải ảnh lên (Max 10)", color = Color.Gray, fontSize = 12.sp)
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .size(100.dp)
+                                    .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
+                                    .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
+                                    .clickable { multiplePhotoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.Gray)
                             }
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(8.dp))
+                            .clickable { multiplePhotoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color(0xFF00D4FF), modifier = Modifier.size(32.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Bấm để tải ảnh lên (Max 10)", color = Color.Gray, fontSize = 12.sp)
                         }
                     }
                 }
             }
 
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = viewModel.title.value,
-                        onValueChange = { viewModel.title.value = it },
-                        label = { Text("Tiêu đề (Ví dụ: Pass lại Sazabi Ver Ka)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+            Divider(color = Color(0xFFEEEEEE))
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedTextField(
+                    value = viewModel.title.value,
+                    onValueChange = { viewModel.title.value = it },
+                    label = { Text("Tiêu đề bài viết", color = Color.Gray) },
+                    placeholder = { Text("Ví dụ: Pass lại Sazabi Ver Ka ráp nét...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF00D4FF),
+                        unfocusedBorderColor = Color(0xFFE0E0E0)
                     )
+                )
 
-                    OutlinedTextField(
-                        value = viewModel.price.value,
-                        onValueChange = { if (it.all { char -> char.isDigit() }) viewModel.price.value = it },
-                        label = { Text("Giá mong muốn (VNĐ)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                }
+                OutlinedTextField(
+                    value = viewModel.price.value,
+                    onValueChange = {
+                        if (it.all { char -> char.isDigit() } && it.length <= 12) {
+                            viewModel.price.value = it
+                        }
+                    },
+                    label = { Text("Giá mong muốn", color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF00D4FF),
+                        unfocusedBorderColor = Color(0xFFE0E0E0)
+                    ),
+                    visualTransformation = CurrencyAmountInputVisualTransformation(),
+                    suffix = { Text("VNĐ", fontWeight = FontWeight.Bold, color = Color.Gray) }
+                )
             }
 
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Tình trạng sản phẩm:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Divider(color = Color(0xFFEEEEEE))
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column {
+                    Text("Tình trạng sản phẩm", fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         listOf("NEW", "LIKE NEW", "USED", "JUNK").forEach { condition ->
                             FilterChip(
                                 selected = viewModel.condition.value == condition,
                                 onClick = { viewModel.condition.value = condition },
-                                label = { Text(condition) },
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFFF9800), selectedLabelColor = Color.White)
+                                label = { Text(condition, fontWeight = FontWeight.Medium) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFFFF9800),
+                                    selectedLabelColor = Color.White,
+                                    containerColor = Color(0xFFF5F5F5)
+                                ),
+                                border = null,
+                                shape = RoundedCornerShape(8.dp)
                             )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Text("Dòng (Grade):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(listOf("HG", "RG", "MG", "PG", "SD", "MB", "OTHER")) { grade ->
+                Column {
+                    Text("Dòng (Grade)", fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        listOf("HG", "RG", "MG", "PG", "SD", "MB", "OTHER").forEach { grade ->
                             FilterChip(
                                 selected = viewModel.grade.value == grade,
                                 onClick = { viewModel.grade.value = grade },
-                                label = { Text(grade) },
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFF00D4FF), selectedLabelColor = Color.White)
+                                label = { Text(grade, fontWeight = FontWeight.Medium) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFF00D4FF),
+                                    selectedLabelColor = Color.White,
+                                    containerColor = Color(0xFFF5F5F5)
+                                ),
+                                border = null,
+                                shape = RoundedCornerShape(8.dp)
                             )
                         }
                     }
                 }
             }
 
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Mô tả chi tiết:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    OutlinedTextField(
-                        value = viewModel.content.value,
-                        onValueChange = { viewModel.content.value = it },
-                        modifier = Modifier.fillMaxWidth().height(150.dp).padding(top=8.dp),
-                        placeholder = { Text("Mô tả tình trạng box, khớp, decal, phụ kiện...") },
-                        shape = RoundedCornerShape(8.dp)
+            Divider(color = Color(0xFFEEEEEE))
+            Column {
+                Text("Mô tả chi tiết", fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(bottom = 8.dp))
+                OutlinedTextField(
+                    value = viewModel.content.value,
+                    onValueChange = { viewModel.content.value = it },
+                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                    placeholder = { Text("Mô tả tình trạng box, khớp, decal, phụ kiện...", color = Color.Gray) },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF00D4FF),
+                        unfocusedBorderColor = Color(0xFFE0E0E0)
                     )
-                }
+                )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
+            Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = { viewModel.createPost() },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00D4FF)),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1)),
+                shape = RoundedCornerShape(12.dp),
                 enabled = !viewModel.isLoading.value
             ) {
                 if (viewModel.isLoading.value) {
@@ -239,10 +313,10 @@ fun CreatePostScreen(
                 } else {
                     Icon(Icons.Default.CloudUpload, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("GỬI BÀI DUYỆT", fontWeight = FontWeight.Bold)
+                    Text("GỬI BÀI DUYỆT", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }

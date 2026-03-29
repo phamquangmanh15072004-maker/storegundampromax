@@ -12,11 +12,13 @@ import com.example.storepromax.domain.repository.UserRepository
 import com.example.storepromax.utils.AddressUtils
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 @HiltViewModel
@@ -35,7 +37,6 @@ class EditProfileViewModel @Inject constructor(
     private val _updateState = MutableStateFlow<String?>(null)
     val updateState = _updateState.asStateFlow()
 
-    // --- DATA ĐỊA CHỈ ---
     private val _provinces = MutableStateFlow<List<Province>>(emptyList())
     val provinces = _provinces.asStateFlow()
 
@@ -62,17 +63,14 @@ class EditProfileViewModel @Inject constructor(
 
     private fun loadData() {
         viewModelScope.launch {
-            // 1. Load danh sách Tỉnh
             val provinceList = AddressUtils(context).getProvinces()
             _provinces.value = provinceList
 
             val uid = auth.currentUser?.uid
             if (uid != null) {
                 userRepository.getUserDetails(uid).onSuccess { user ->
-                    // ✅ Hết lỗi Type Mismatch ở đây
                     _currentUser.value = user
 
-                    // Parse địa chỉ cũ vào Dropdown
                     if (user.shippingAddress.isNotBlank()) {
                         parseAddressToDropdown(user.shippingAddress, provinceList)
                     }
@@ -80,41 +78,28 @@ class EditProfileViewModel @Inject constructor(
             }
         }
     }
-
-    // --- LOGIC PARSE ĐỊA CHỈ ---
     private fun parseAddressToDropdown(fullAddress: String, provinceList: List<Province>) {
-        try {
-            // Giả sử: "Số 12, Phường X, Quận Y, Tỉnh Z"
-            val parts = fullAddress.split(",").map { it.trim() }
+        try { val parts = fullAddress.split(",").map { it.trim() }
 
             if (parts.size >= 3) {
-                val pName = parts.last() // Tỉnh
-                val dName = parts[parts.size - 2] // Huyện
-                val wName = parts[parts.size - 3] // Xã
+                val pName = parts.last()
+                val dName = parts[parts.size - 2]
+                val wName = parts[parts.size - 3]
 
                 val specific = parts.take(parts.size - 3).joinToString(", ")
                 specificAddress.value = specific
-
-                // 1. Tìm Tỉnh
                 val foundProvince = provinceList.find { it.name.equals(pName, ignoreCase = true) }
                 if (foundProvince != null) {
-                    // ✅ Hết lỗi Unresolved reference ở đây
                     _selectedProvince.value = foundProvince
-
-                    // 2. Load Huyện
                     val districtList = foundProvince.getDistrictList()
                     _districts.value = districtList
-
-                    // 3. Tìm Huyện
                     val foundDistrict = districtList.find { it.name.equals(dName, ignoreCase = true) }
                     if (foundDistrict != null) {
                         _selectedDistrict.value = foundDistrict
 
-                        // 4. Load Xã
                         val wardList = foundDistrict.getWardList()
                         _wards.value = wardList
 
-                        // 5. Tìm Xã
                         val foundWard = wardList.find { it.name.equals(wName, ignoreCase = true) }
                         if (foundWard != null) {
                             _selectedWard.value = foundWard
@@ -129,7 +114,6 @@ class EditProfileViewModel @Inject constructor(
         }
     }
 
-    // --- CÁC HÀM SỰ KIỆN CHỌN ---
     fun onProvinceSelected(province: Province) {
         _selectedProvince.value = province
         _selectedDistrict.value = null
@@ -152,15 +136,13 @@ class EditProfileViewModel @Inject constructor(
         specificAddress.value = value
     }
 
-    // --- LƯU THÔNG TIN ---
     fun saveProfile(name: String, phone: String, newImageUri: Uri?) {
         viewModelScope.launch {
             _isLoading.value = true
-            val currentUser = _currentUser.value ?: return@launch // Lấy từ biến User Model
+            val currentUser = _currentUser.value ?: return@launch
 
             var avatarUrl = currentUser.avatarUrl
 
-            // 1. Upload ảnh
             if (newImageUri != null) {
                 val uploadResult = userRepository.uploadAvatar(newImageUri)
                 if (uploadResult.isSuccess) {
@@ -191,6 +173,38 @@ class EditProfileViewModel @Inject constructor(
                     .setPhotoUri(if (avatarUrl.isNotBlank()) Uri.parse(avatarUrl) else null)
                     .build()
                 auth.currentUser?.updateProfile(profileUpdates)
+
+                try {
+                    val db = FirebaseFirestore.getInstance()
+                    val batch = db.batch()
+                    val uid = auth.currentUser?.uid ?: ""
+                    val postsSnapshot = db.collection("posts")
+                        .whereEqualTo("userId", uid)
+                        .get()
+                        .await()
+
+                    for (doc in postsSnapshot.documents) {
+                        batch.update(doc.reference, mapOf(
+                            "userName" to name,
+                            "userAvatar" to avatarUrl
+                        ))
+                    }
+
+                    val commentsSnapshot = db.collectionGroup("comments")
+                        .whereEqualTo("userId", uid)
+                        .get()
+                        .await()
+
+                    for (doc in commentsSnapshot.documents) {
+                        batch.update(doc.reference, mapOf(
+                            "userName" to name,
+                            "userAvatar" to avatarUrl
+                        ))
+                    }
+                    batch.commit().await()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
 
                 _currentUser.value = updatedUser
                 _updateState.value = "SUCCESS"

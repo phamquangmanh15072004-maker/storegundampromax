@@ -1,4 +1,4 @@
-package com.example.storepromax
+package com.example.storepromax.presentation.main
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,7 +9,9 @@ import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -26,7 +28,14 @@ class MainViewModel @Inject constructor(
     init {
         monitorUserStatus()
     }
+    private val _scrollToTopEvent = MutableSharedFlow<Unit>()
+    val scrollToTopEvent = _scrollToTopEvent.asSharedFlow()
 
+    fun triggerScrollToTop() {
+        viewModelScope.launch {
+            _scrollToTopEvent.emit(Unit)
+        }
+    }
     fun monitorUserStatus() {
         val uid = auth.currentUser?.uid ?: return
         userListener = firestore.collection("users").document(uid)
@@ -61,8 +70,6 @@ class MainViewModel @Inject constructor(
                         .update("fcmToken", FieldValue.delete())
                         .await()
                     FirebaseMessaging.getInstance().unsubscribeFromTopic("admin_notifications").await()
-
-                    // 3. Đăng xuất Auth
                     auth.signOut()
                     onSuccess()
 

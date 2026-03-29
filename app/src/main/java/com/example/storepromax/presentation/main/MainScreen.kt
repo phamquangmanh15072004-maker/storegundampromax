@@ -45,8 +45,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -72,7 +74,8 @@ fun MainScreen(rootNavController: NavController) {
         BottomNavItem("Giỏ hàng", "cart", Icons.Filled.ShoppingCart, Icons.Outlined.ShoppingCart),
         BottomNavItem("Tài khoản", "profile", Icons.Filled.Person, Icons.Outlined.Person),
     )
-
+    val context = LocalContext.current
+    val mainViewModel: MainViewModel = hiltViewModel(context as androidx.activity.ComponentActivity)
     Scaffold(
         containerColor = Color(0xFFF5F5F5),
         bottomBar = {
@@ -83,12 +86,18 @@ fun MainScreen(rootNavController: NavController) {
                 items = items,
                 currentRoute = currentRoute,
                 onItemClick = { item ->
-                    navController.navigate(item.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
+                    if (item.route == currentRoute) {
+                        if (item.route == "feed") {
+                            mainViewModel.triggerScrollToTop()
                         }
-                        launchSingleTop = true
-                        restoreState = true
+                    } else {
+                        navController.navigate(item.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 }
             )

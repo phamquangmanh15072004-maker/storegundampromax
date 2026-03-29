@@ -109,10 +109,17 @@ fun NotificationScreen(
                                 if (!notification.isRead) {
                                     viewModel.markAsRead(notification.id)
                                 }
-                                if (notification.action == "NAVIGATE_TO_REVIEW" && notification.orderId != null) {
-                                    navController.navigate("write_review_screen/${notification.orderId}")
-                                } else if (notification.orderId != null) {
-                                    navController.navigate("order_detail/${notification.orderId}")
+                                when {
+                                    (notification.type == "COMMENT" || notification.type == "LIKE") && notification.postId != null -> {
+                                        navController.navigate("post_detail/${notification.postId}")
+                                    }
+                                    notification.action == "NAVIGATE_TO_REVIEW" && notification.orderId != null -> {
+                                        navController.navigate("write_review_screen/${notification.orderId}")
+                                    }
+                                    notification.orderId != null -> {
+                                        navController.navigate("order_detail/${notification.orderId}")
+                                    }
+
                                 }
                             }
                         )
@@ -135,6 +142,8 @@ fun NotificationItem(
         "SHIPPING" -> Triple(Icons.Default.LocalShipping, GunplaBlue, Color(0xFFE3F2FD))
         "CONFIRMED" -> Triple(Icons.Default.Receipt, Color(0xFFFF9800), Color(0xFFFFF3E0))
         "CANCELLED" -> Triple(Icons.Default.Cancel, Color.Red, Color(0xFFFFEBEE))
+        "COMMENT" -> Triple(Icons.Default.ChatBubbleOutline, Color(0xFF0288D1), Color(0xFFE1F5FE))
+        "LIKE" -> Triple(Icons.Default.Favorite, Color(0xFFFF424F), Color(0xFFFFEBEE))
         else -> Triple(Icons.Default.Notifications, Color.Gray, Color(0xFFF5F5F5))
     }
 

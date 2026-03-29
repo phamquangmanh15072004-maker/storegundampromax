@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.example.storepromax.MainViewModel
+import com.example.storepromax.presentation.main.MainViewModel
 import com.example.storepromax.presentation.navigation.Screen
 import com.google.firebase.auth.FirebaseAuth
 
