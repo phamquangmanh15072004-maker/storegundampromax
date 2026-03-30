@@ -137,10 +137,15 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun addToCart(product: Product, quantity: Int, onSuccess: () -> Unit) {
+    fun addToCart(product: Product, quantity: Int, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
-            cartRepository.addToCart(product, quantity)
-            onSuccess()
+            val result = cartRepository.addToCart(product, quantity)
+            if (result.isSuccess) {
+                onResult(true, "Đã thêm vào giỏ hàng!")
+            } else {
+                val errorMsg = result.exceptionOrNull()?.message ?: "Có lỗi xảy ra"
+                onResult(false, errorMsg)
+            }
         }
     }
 

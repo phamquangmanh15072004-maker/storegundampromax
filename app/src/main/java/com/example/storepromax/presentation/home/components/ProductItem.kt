@@ -10,14 +10,20 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.rounded.AddShoppingCart
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -32,12 +38,12 @@ private val CurrencyFormatter = DecimalFormat("#,###")
 @Composable
 fun ProductItem(
     product: Product,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
-    onAddToCart: () -> Unit,
-    modifier: Modifier = Modifier
+    onAddToCart: (Offset) -> Unit
 ) {
     val isOutOfStock = remember(product.stock) { product.stock <= 0 }
-
+    var cartButtonOffset by remember { mutableStateOf(Offset.Zero) }
     val discountPercent = remember(product.price, product.originalPrice) {
         if (product.originalPrice > product.price) {
             ((product.originalPrice - product.price) / product.originalPrice.toDouble() * 100).toInt()
@@ -170,15 +176,16 @@ fun ProductItem(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(12.dp)
-                    .wrapContentHeight()
             ) {
                 Text(
                     text = product.name,
                     maxLines = 2,
+                    minLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (isOutOfStock) Color.LightGray else Color(0xFF333333)
+                    color = if (isOutOfStock) Color.LightGray else Color(0xFF333333),
+                    modifier = Modifier.height(40.dp)
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -219,14 +226,16 @@ fun ProductItem(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-
                     if (!isOutOfStock) {
                         Box(
                             modifier = Modifier
                                 .size(30.dp)
+                                .onGloballyPositioned { coordinates ->
+                                    cartButtonOffset = coordinates.positionInRoot()
+                                }
                                 .background(Color(0xFF212121), CircleShape)
                                 .clip(CircleShape)
-                                .clickable { onAddToCart() },
+                                .clickable { onAddToCart(cartButtonOffset) },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(

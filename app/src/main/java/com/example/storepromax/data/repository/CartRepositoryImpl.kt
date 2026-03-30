@@ -28,7 +28,6 @@ class CartRepositoryImpl @Inject constructor(
 
         val subscription = firestore.collection("carts").document(userId).collection("items")
             .addSnapshotListener { snapshot, error ->
-                // 1. Kiểm tra lỗi snapshot trước
                 if (error != null) {
                     trySend(emptyList())
                     return@addSnapshotListener
@@ -36,23 +35,17 @@ class CartRepositoryImpl @Inject constructor(
 
                 val items = snapshot?.documents?.mapNotNull { doc ->
                     try {
-                        // Lấy dữ liệu cơ bản
                         val itemId = doc.id
                         val quantity = doc.getLong("quantity")?.toInt() ?: 1
                         val isSelected = doc.getBoolean("isSelected") ?: false
 
-                        // Lấy map product an toàn
                         val productMap = doc.get("product") as? Map<String, Any>
 
                         if (productMap != null) {
-                            // 🔥 QUAN TRỌNG: Hãy chắc chắn các tên trường (key) khớp với Model Product
-                            // Và kiểu dữ liệu (Long/Double) phải chuẩn.
                             val product = Product(
                                 id = productMap["id"] as? String ?: "",
                                 name = productMap["name"] as? String ?: "",
                                 description = productMap["description"] as? String ?: "",
-                                // Lưu ý: Firebase số nguyên là Long, số thực là Double.
-                                // Dùng 'as? Number' rồi toLong()/toDouble() là an toàn nhất.
                                 price = (productMap["price"] as? Number)?.toLong() ?: 0L,
                                 originalPrice = (productMap["originalPrice"] as? Number)?.toLong() ?: 0L,
                                 stock = (productMap["stock"] as? Number)?.toInt() ?: 0,
@@ -62,12 +55,8 @@ class CartRepositoryImpl @Inject constructor(
                                 category = productMap["category"] as? String ?: "",
                                 rating = (productMap["rating"] as? Number)?.toDouble() ?: 0.0,
                                 sold = (productMap["sold"] as? Number)?.toInt() ?: 0,
-                                // 🔥 Nếu class Product của bạn có thêm trường 'model3DUrl'
-                                // thì nhớ thêm dòng này vào, nếu không sẽ lỗi thiếu tham số:
                                 model3DUrl = productMap["model3DUrl"] as? String ?: ""
                             )
-
-                            // Trả về CartItem
                             CartItem(
                                 id = itemId,
                                 product = product,
@@ -75,11 +64,11 @@ class CartRepositoryImpl @Inject constructor(
                                 isSelected = isSelected
                             )
                         } else {
-                            null // Bỏ qua nếu không có product map
+                            null
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
-                        null // Bỏ qua item lỗi để không crash app
+                        null
                     }
                 } ?: emptyList()
 
@@ -89,25 +78,50 @@ class CartRepositoryImpl @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
-    override suspend fun addToCart(product: Product, quantity: Int) {
-        if (userId.isEmpty()) return
+    override suspend fun addToCart(product: Product, quantity: Int): Result<Unit> {
+        if (userId.isEmpty()) return Result.failure(Exception("Bạn chưa đăng nhập!"))
 
-        val cartRef = firestore.collection("carts").document(userId).collection("items").document(product.id)
+        return try {
+            val cartRef = firestore.collection("carts").document(userId).collection("items").document(product.id)
+            val doc = cartRef.get().await()
 
-        // Kiểm tra xem hàng đã có chưa để cộng dồn
-        val doc = cartRef.get().await()
-        if (doc.exists()) {
-            val currentQty = doc.getLong("quantity")?.toInt() ?: 0
-            cartRef.update("quantity", currentQty + quantity).await()
-        } else {
-            // Lưu toàn bộ object CartItem (Bao gồm cả Product data) lên Firebase
-            // Để lúc lấy về không cần query bảng Product nữa
-            val cartItemMap = hashMapOf(
-                "product" to product,
-                "quantity" to quantity,
-                "isSelected" to false
-            )
-            cartRef.set(cartItemMap).await()
+            if (doc.exists()) {
+                val currentQty = doc.getLong("quantity")?.toInt() ?: 0
+                val expectedQty = currentQty + quantity
+
+                if (expectedQty > product.stock) {
+                    val remaining = product.stock - currentQty
+                    val errorMessage = if (remaining > 0) {
+                        "Bạn chỉ có thể thêm tối đa $remaining sản phẩm nữa!"
+                    } else {
+                        "Sản phẩm này trong giỏ hàng đã đạt mức tối đa!"
+                    }
+                    return Result.failure(Exception(errorMessage))
+                }
+
+                val updates = mapOf(
+                    "quantity" to expectedQty,
+                    "product" to product
+                )
+                cartRef.update(updates).await()
+
+            } else {
+                if (quantity > product.stock) {
+                    return Result.failure(Exception("Số lượng yêu cầu vượt quá tồn kho!"))
+                }
+
+                val cartItemMap = hashMapOf(
+                    "product" to product,
+                    "quantity" to quantity,
+                    "isSelected" to false
+                )
+                cartRef.set(cartItemMap).await()
+            }
+            Result.success(Unit)
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
         }
     }
 
