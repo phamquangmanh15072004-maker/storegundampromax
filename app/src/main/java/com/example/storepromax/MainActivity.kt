@@ -35,6 +35,8 @@ import com.example.storepromax.presentation.admin.feed.AdminFeedApprovalScreen
 import com.example.storepromax.presentation.admin.product.AddProductScreen
 import com.example.storepromax.presentation.admin.product.AdminProductListScreen
 import com.example.storepromax.presentation.admin.user.AdminUserScreen
+import com.example.storepromax.presentation.admin.voucher.AdminVoucherFormScreen
+import com.example.storepromax.presentation.admin.voucher.AdminVoucherScreen
 import com.example.storepromax.presentation.cart.CartScreen
 import com.example.storepromax.presentation.chat.ChatDetailScreen
 import com.example.storepromax.presentation.chat.UserChatListScreen
@@ -47,6 +49,7 @@ import com.example.storepromax.presentation.feed.PostDetailScreen
 import com.example.storepromax.presentation.login.LoginScreen
 import com.example.storepromax.presentation.main.MainScreen
 import com.example.storepromax.presentation.main.MainViewModel
+import com.example.storepromax.presentation.myvoucher.MyVoucherScreen
 import com.example.storepromax.presentation.navigation.Screen
 import com.example.storepromax.presentation.notification.NotificationScreen
 import com.example.storepromax.presentation.order.OrderHistoryScreen
@@ -400,6 +403,22 @@ class MainActivity : ComponentActivity() {
                     ) { backStackEntry ->
                         val postId = backStackEntry.arguments?.getString("postId") ?: ""
                         PostDetailScreen(navController = navController, postId = postId)
+                    }
+                    composable(route ="my_voucher_screen"){
+                        MyVoucherScreen(navController = navController)
+                    }
+                    composable(route ="admin_voucher"){
+                        AdminVoucherScreen(navController = navController)
+                    }
+                    composable("admin_voucher_form") {
+                        AdminVoucherFormScreen(navController = navController, voucherId = null)
+                    }
+                    composable(
+                        route = "admin_voucher_form/{voucherId}",
+                        arguments = listOf(navArgument("voucherId") { type = NavType.StringType })
+                    ) { backStackEntry ->
+                        val id = backStackEntry.arguments?.getString("voucherId")
+                        AdminVoucherFormScreen(navController = navController, voucherId = id)
                     }
                 }
             }

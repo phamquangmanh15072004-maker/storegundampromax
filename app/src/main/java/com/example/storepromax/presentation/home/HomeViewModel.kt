@@ -6,6 +6,8 @@ import com.example.storepromax.domain.model.Product
 import com.example.storepromax.domain.repository.CartRepository
 import com.example.storepromax.domain.repository.ChatRepository
 import com.example.storepromax.domain.repository.ProductRepository
+import com.example.storepromax.domain.repository.VoucherRepository
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,7 +21,8 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val chatRepo: ChatRepository,
-    private val cartRepository: CartRepository
+    private val cartRepository: CartRepository,
+    private val voucherRepository: VoucherRepository
 ) : ViewModel() {
 
     private var _allProducts = mutableListOf<Product>()
@@ -52,10 +55,15 @@ class HomeViewModel @Inject constructor(
 
     private val _currentMaxPrice = MutableStateFlow<Long?>(null)
     val currentMaxPrice = _currentMaxPrice.asStateFlow()
+    private val _voucherOnHome = MutableStateFlow<List<com.example.storepromax.domain.model.Voucher>>(emptyList())
+    val voucherOnHome = _voucherOnHome.asStateFlow()
 
+    private val _userVoucherIds = MutableStateFlow<List<String>>(emptyList())
+    val userVoucherIds = _userVoucherIds.asStateFlow()
     init {
         loadGlobalNewArrivals()
         loadInitialProducts()
+        loadVouchers()
     }
 
     fun loadInitialProducts(category: String = _selectedCategory.value) {
@@ -167,5 +175,31 @@ class HomeViewModel @Inject constructor(
         _currentSortBy.value = "createdAt"
         _currentIsAscending.value = false
         loadInitialProducts(_selectedCategory.value)
+    }
+    fun loadVouchers() {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+        viewModelScope.launch {
+            voucherRepository.getAvailableVouchers().onSuccess {
+                _voucherOnHome.value = it
+            }
+            if (uid.isNotEmpty()) {
+                voucherRepository.getUserVouchers(uid).onSuccess { list ->
+                    _userVoucherIds.value = list.map { it.voucherId }
+                }
+            }
+        }
+    }
+
+    fun claimVoucher(voucher: com.example.storepromax.domain.model.Voucher) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+        if (uid.isEmpty()) {
+            return
+        }
+
+        viewModelScope.launch {
+            voucherRepository.claimVoucher(uid, voucher).onSuccess {
+                loadVouchers()
+            }
+        }
     }
 }

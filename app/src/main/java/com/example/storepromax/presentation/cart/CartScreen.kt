@@ -117,8 +117,8 @@ fun CartScreen(
                 )
 
                 VoucherSelectionRow(
-                    selectedCount = listOfNotNull(selectedDiscount, selectedFreeship).size,
-                    totalSaved = productDiscount + freeshipAmount,
+                    productDiscount = productDiscount, // 🌟 Truyền tiền giảm SP vào
+                    freeshipAmount = freeshipAmount,   // 🌟 Truyền tiền Freeship vào
                     onClick = { showVoucherSheet = true },
                     modifier = Modifier.zIndex(1f)
                 )
@@ -170,8 +170,8 @@ fun CartScreen(
 
 @Composable
 fun VoucherSelectionRow(
-    selectedCount: Int,
-    totalSaved: Long,
+    productDiscount: Long,
+    freeshipAmount: Long,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -187,14 +187,21 @@ fun VoucherSelectionRow(
             Icon(Icons.Default.ConfirmationNumber, contentDescription = null, tint = GunplaBlue)
             Spacer(modifier = Modifier.width(8.dp))
             Text("StoreProMax Voucher", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-
             Spacer(modifier = Modifier.weight(1f))
-
-            if (selectedCount > 0) {
-                Text("Đã chọn $selectedCount mã (-₫${formatter.format(totalSaved)})", color = SuccessGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            } else {
-                Text("Chọn hoặc nhập mã", color = Color.Gray, fontSize = 14.sp)
+            Column(horizontalAlignment = Alignment.End) {
+                if (productDiscount == 0L && freeshipAmount == 0L) {
+                    Text("Chọn hoặc nhập mã", color = Color.Gray, fontSize = 14.sp)
+                } else {
+                    if (productDiscount > 0) {
+                        Text("-₫${formatter.format(productDiscount)}", color = SuccessGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                    if (freeshipAmount > 0) {
+                        Text("Miễn Phí Vận Chuyển", color = TealFreeship, fontWeight = FontWeight.Medium, fontSize = 11.sp)
+                    }
+                }
             }
+
+            Spacer(modifier = Modifier.width(4.dp))
             Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color.Gray)
         }
     }
@@ -226,13 +233,13 @@ fun VoucherBottomSheet(
                 OutlinedTextField(
                     value = inputCode, onValueChange = { inputCode = it.uppercase() },
                     placeholder = { Text("Nhập mã voucher...") }, singleLine = true,
-                    modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(8.dp)
+                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Button(
                     onClick = { focusManager.clearFocus(); if (inputCode.isNotBlank()) onApplyCode(inputCode) },
                     enabled = inputCode.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue),
-                    shape = RoundedCornerShape(8.dp), modifier = Modifier.height(50.dp)
+                    shape = RoundedCornerShape(8.dp), modifier = Modifier.height(56.dp)
                 ) { Text("ÁP DỤNG", fontWeight = FontWeight.Bold) }
             }
 
@@ -278,23 +285,39 @@ fun VoucherTicket(
     iconBgColor: Color, icon: ImageVector, onSelect: () -> Unit
 ) {
     val formatter = DecimalFormat("#,###")
+    val progress = if (voucher.usageLimit > 0) {
+        (voucher.usedCount.toFloat() / voucher.usageLimit.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+    val percentString = (progress * 100).toInt()
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .alpha(if (isEligible) 1f else 0.5f) // Mờ đi nếu không đủ điều kiện
+            .alpha(if (isEligible) 1f else 0.5f)
             .clickable(enabled = isEligible) { onSelect() }
             .padding(bottom = 8.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(8.dp), elevation = CardDefaults.cardElevation(2.dp)
+        shape = RoundedCornerShape(8.dp),
+        elevation = CardDefaults.cardElevation(2.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth().height(90.dp)) {
-            Box(modifier = Modifier.fillMaxHeight().width(90.dp).background(if(isEligible) iconBgColor else Color.Gray), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(90.dp)
+                    .background(if (isEligible) iconBgColor else Color.Gray),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(vertical = 16.dp)) {
                     Icon(icon, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(if (voucher.type == "FREESHIP") "FREESHIP" else "DISCOUNT", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
                 }
             }
-            Column(modifier = Modifier.weight(1f).padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Column(
+                modifier = Modifier.weight(1f).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Text(voucher.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (isEligible) {
                     Text("Đơn tối thiểu ₫${formatter.format(voucher.minOrderValue)}", color = Color.Gray, fontSize = 11.sp)
@@ -305,9 +328,20 @@ fun VoucherTicket(
                         Text("Mua thêm ₫${formatter.format(voucher.minOrderValue - currentSubTotal)} để áp dụng", color = AlertRed, fontSize = 11.sp)
                     }
                 }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    LinearProgressIndicator(
+                        progress = progress,
+                        modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
+                        color = if (progress >= 0.9f) AlertRed else iconBgColor, // Đỏ lên nếu sắp hết mã
+                        trackColor = Color(0xFFEEEEEE)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Đã dùng $percentString%", fontSize = 10.sp, color = Color.Gray)
+                }
             }
             Checkbox(
-                checked = isSelected, onCheckedChange = null,
+                checked = isSelected,
+                onCheckedChange = null,
                 colors = CheckboxDefaults.colors(checkedColor = iconBgColor),
                 modifier = Modifier.align(Alignment.CenterVertically).padding(end = 8.dp)
             )

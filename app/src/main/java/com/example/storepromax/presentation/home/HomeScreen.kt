@@ -45,6 +45,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import com.example.storepromax.feature.product_detail.components.VoucherHomeSection
 
 val GunplaBlue = Color(0xFF0D47A1)
 val BgColor = Color(0xFFF2F4F7)
@@ -77,7 +78,8 @@ fun HomeScreen(
 
     var flyingImageUrl by remember { mutableStateOf<String?>(null) }
     var flyingStartOffset by remember { mutableStateOf(Offset.Zero) }
-
+    val voucherOnHome by viewModel.voucherOnHome.collectAsState()
+    val userVoucherIds by viewModel.userVoucherIds.collectAsState()
     val isAtBottom by remember {
         derivedStateOf {
             val layoutInfo = gridState.layoutInfo
@@ -129,6 +131,14 @@ fun HomeScreen(
                 Column {
                     HeaderSection(navController, unreadCount)
                     Box(modifier = Modifier.padding(16.dp)) { BannerSection() }
+
+                    if (voucherOnHome.isNotEmpty()) {
+                        VoucherHomeSection(
+                            vouchers = voucherOnHome,
+                            userVoucherIds = userVoucherIds,
+                            onClaim = { voucher -> viewModel.claimVoucher(voucher) }
+                        )
+                    }
                 }
             }
             if (newArrivals.isNotEmpty() || (isLoading && newArrivals.isEmpty())) {

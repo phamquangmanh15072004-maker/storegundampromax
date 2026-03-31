@@ -53,6 +53,7 @@ fun AdminDashboardScreen(
         AdminMenuItem("Thành Viên", Icons.Default.People, Color(0xFFF57C00), "admin_users"),
         AdminMenuItem("Thống Kê", Icons.Default.PieChart, Color(0xFFC2185B), "admin_stats"),
         AdminMenuItem("CSKH", Icons.Default.SupportAgent, Color(0xFF0097A7),"admin_chat_list"),
+        AdminMenuItem("Voucher", Icons.Default.ConfirmationNumber, Color(0xFFA70064),"admin_voucher"),
     )
     LaunchedEffect(Unit) {
         FirebaseMessaging.getInstance().subscribeToTopic("admin_notifications")
@@ -130,6 +131,7 @@ fun AdminDashboardScreen(
                             "admin_users" -> navController.navigate("admin_user")
                             "admin_stats" -> navController.navigate("admin_stats")
                             "admin_chat_list" -> navController.navigate("admin_chat_list")
+                            "admin_voucher" -> navController.navigate("admin_voucher")
                         }
                     }
                 }

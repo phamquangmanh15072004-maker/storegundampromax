@@ -1,6 +1,9 @@
 package com.example.storepromax.domain.model
 
+import com.google.firebase.firestore.DocumentId
+
 data class Voucher(
+    @DocumentId
     val id: String = "",
     val code: String = "",
     val title: String = "",
@@ -11,5 +14,6 @@ data class Voucher(
     val minOrderValue: Long = 0L,
     val usageLimit: Int = 0,
     val usedCount: Int = 0,
-    val expirationDate: Long = 0L
+    val expirationDate: Long = 0L,
+    val isActive: Boolean = true
 )

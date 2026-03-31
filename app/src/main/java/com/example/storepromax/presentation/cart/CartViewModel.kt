@@ -1,5 +1,6 @@
 package com.example.storepromax.presentation.cart
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.storepromax.domain.model.CartItem
@@ -62,9 +63,14 @@ class CartViewModel @Inject constructor(
     }
 
     fun fetchAvailableVouchers() {
+        val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+        if (currentUserId.isEmpty()) return
+
         viewModelScope.launch {
-            voucherRepository.getAvailableVouchers().onSuccess {
-                _availableVouchers.value = it
+            voucherRepository.getUserVouchers(currentUserId).onSuccess { list ->
+                _availableVouchers.value = list
+                    .filter { it.status == "AVAILABLE" }
+                    .map { it.voucher }
             }
         }
     }
