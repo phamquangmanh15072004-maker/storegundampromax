@@ -7,9 +7,11 @@ import com.example.storepromax.data.local.dao.HistoryDao
 import com.example.storepromax.data.repository.CartRepositoryImpl
 import com.example.storepromax.data.repository.ReviewRepositoryImpl
 import com.example.storepromax.data.repository.UserRepositoryImpl
+import com.example.storepromax.data.repository.VoucherRepositoryImpl
 import com.example.storepromax.domain.repository.CartRepository
 import com.example.storepromax.domain.repository.ReviewRepository
 import com.example.storepromax.domain.repository.UserRepository
+import com.example.storepromax.domain.repository.VoucherRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage

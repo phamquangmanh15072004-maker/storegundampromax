@@ -7,6 +7,7 @@ import com.example.storepromax.data.repository.OrderRepositoryImpl
 import com.example.storepromax.data.repository.PostRepositoryImpl
 import com.example.storepromax.data.repository.ProductRepositoryImpl
 import com.example.storepromax.data.repository.StatsRepositoryImpl
+import com.example.storepromax.data.repository.VoucherRepositoryImpl
 import com.example.storepromax.domain.repository.AuthRepository
 import com.example.storepromax.domain.repository.CartRepository
 import com.example.storepromax.domain.repository.ChatRepository
@@ -14,6 +15,7 @@ import com.example.storepromax.domain.repository.OrderRepository
 import com.example.storepromax.domain.repository.PostRepository
 import com.example.storepromax.domain.repository.ProductRepository
 import com.example.storepromax.domain.repository.StatsRepository
+import com.example.storepromax.domain.repository.VoucherRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.Binds
@@ -68,4 +70,9 @@ abstract class RepositoryModule {
         chatRepositoryImpl: ChatRepositoryImpl
     ): ChatRepository
 
+    @Binds
+    @Singleton
+    abstract fun bindVoucherRepository(
+        voucherRepositoryImpl: VoucherRepositoryImpl
+    ): VoucherRepository
 }
