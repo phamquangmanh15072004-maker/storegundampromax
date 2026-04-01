@@ -3,16 +3,18 @@ package com.example.storepromax.presentation.checkout
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.storepromax.admin.utils.NotificationHelper // 👈 QUAN TRỌNG: Import cái này
+import com.example.storepromax.admin.utils.NotificationHelper
 import com.example.storepromax.domain.model.CartItem
 import com.example.storepromax.domain.model.District
 import com.example.storepromax.domain.model.Order
 import com.example.storepromax.domain.model.Province
+import com.example.storepromax.domain.model.Voucher
 import com.example.storepromax.domain.model.Ward
 import com.example.storepromax.domain.repository.AuthRepository
 import com.example.storepromax.domain.repository.CartRepository
 import com.example.storepromax.domain.repository.OrderRepository
 import com.example.storepromax.domain.repository.ProductRepository
+import com.example.storepromax.domain.repository.VoucherRepository
 import com.example.storepromax.utils.AddressUtils
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +30,7 @@ class CheckoutViewModel @Inject constructor(
     private val userRepository: AuthRepository,
     private val orderRepository: OrderRepository,
     private val productRepository: ProductRepository,
+    private val voucherRepository: VoucherRepository,
     private val auth: FirebaseAuth,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -35,86 +38,158 @@ class CheckoutViewModel @Inject constructor(
     private var isBuyNowMode = false
     private val _displayItems = MutableStateFlow<List<CartItem>>(emptyList())
     val selectedItems: StateFlow<List<CartItem>> = _displayItems.asStateFlow()
-    private val _totalPrice = MutableStateFlow(0L)
-    val totalPrice: StateFlow<Long> = _totalPrice.asStateFlow()
+
+    private val _availableVouchers = MutableStateFlow<List<Voucher>>(emptyList())
+    val availableVouchers = _availableVouchers.asStateFlow()
+
+    private val _selectedDiscountVoucher = MutableStateFlow<Voucher?>(null)
+    val selectedDiscountVoucher = _selectedDiscountVoucher.asStateFlow()
+
+    private val _selectedFreeshipVoucher = MutableStateFlow<Voucher?>(null)
+    val selectedFreeshipVoucher = _selectedFreeshipVoucher.asStateFlow()
+
+    private var initialDiscountCode: String? = null
+    private var initialFreeshipCode: String? = null
+
+    val totalPrice: StateFlow<Long> = _displayItems.map { list -> list.sumOf { it.totalPrice } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    val shippingFee: StateFlow<Long> = totalPrice.map { if (it > 0) 30000L else 0L }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    val productDiscountAmount: StateFlow<Long> = combine(totalPrice, _selectedDiscountVoucher) { total, v ->
+        if (v == null || total < v.minOrderValue) 0L
+        else {
+            val discount = if (v.discountType == "FIXED") v.discountValue else (total * v.discountValue) / 100
+            val maxDisc = v.maxDiscount ?: 0L
+            val finalDiscount = if (v.discountType == "PERCENT" && maxDisc > 0 && discount > maxDisc) maxDisc else discount
+            if (finalDiscount > total) total else finalDiscount
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    val freeshipAmount: StateFlow<Long> = combine(shippingFee, _selectedFreeshipVoucher, totalPrice) { fee, v, total ->
+        if (v == null || fee == 0L || total < v.minOrderValue) 0L
+        else minOf(fee, v.discountValue)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    val finalTotalPrice: StateFlow<Long> = combine(
+        totalPrice, shippingFee, productDiscountAmount, freeshipAmount
+    ) { sub, ship, prodDisc, shipDisc ->
+        ((sub - prodDisc) + (ship - shipDisc)).coerceAtLeast(0L)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
     val name = MutableStateFlow("")
     val phone = MutableStateFlow("")
+    val specificAddress = MutableStateFlow("")
+    val paymentMethod = MutableStateFlow("COD")
+
     private val _provinces = MutableStateFlow<List<Province>>(emptyList())
     val provinces = _provinces.asStateFlow()
     private val _districts = MutableStateFlow<List<District>>(emptyList())
     val districts = _districts.asStateFlow()
     private val _wards = MutableStateFlow<List<Ward>>(emptyList())
     val wards = _wards.asStateFlow()
+
     val selectedProvince = MutableStateFlow<Province?>(null)
     val selectedDistrict = MutableStateFlow<District?>(null)
     val selectedWard = MutableStateFlow<Ward?>(null)
-    val specificAddress = MutableStateFlow("")
+
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing
     private val _uiEvent = Channel<String>()
     val uiEvent = _uiEvent.receiveAsFlow()
-    val paymentMethod = MutableStateFlow("COD")
 
     init {
         viewModelScope.launch {
             val provinceList = AddressUtils(context).getProvinces()
             _provinces.value = provinceList
             loadUserProfile(provinceList)
+            refreshVouchers()
         }
     }
-    fun submitOrder(onSuccess: () -> Unit) {
-        val currentUserId = auth.currentUser?.uid
-        val fullAddress = getFullAddress()
 
-        if (name.value.isBlank() || phone.value.isBlank() || fullAddress.isBlank()) {
-            viewModelScope.launch { _uiEvent.send("Vui lòng nhập đầy đủ thông tin nhận hàng!") }
+    fun refreshVouchers() {
+        val userId = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            voucherRepository.getUserVouchers(userId).onSuccess { list ->
+                _availableVouchers.value = list.filter { it.status == "AVAILABLE" }.map { it.voucher }
+                applyPendingVouchers()
+            }
+        }
+    }
+    fun setInitialVouchers(dCode: String?, fCode: String?) {
+        if (!dCode.isNullOrBlank() && dCode != "null" && dCode != "{discountCode}") initialDiscountCode = dCode
+        if (!fCode.isNullOrBlank() && fCode != "null" && fCode != "{freeshipCode}") initialFreeshipCode = fCode
+        applyPendingVouchers()
+    }
+    private fun applyPendingVouchers() {
+        val list = _availableVouchers.value
+        if (list.isEmpty()) return
+
+        initialDiscountCode?.let { code ->
+            list.find { it.code == code }?.let { _selectedDiscountVoucher.value = it }
+        }
+        initialFreeshipCode?.let { code ->
+            list.find { it.code == code }?.let { _selectedFreeshipVoucher.value = it }
+        }
+    }
+
+    fun toggleVoucher(voucher: Voucher) {
+        if (voucher.type == "FREESHIP") {
+            _selectedFreeshipVoucher.value = if (_selectedFreeshipVoucher.value?.code == voucher.code) null else voucher
+        } else {
+            _selectedDiscountVoucher.value = if (_selectedDiscountVoucher.value?.code == voucher.code) null else voucher
+        }
+    }
+
+    fun applyVoucherByCode(code: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            voucherRepository.getVoucherByCode(code.uppercase().trim()).onSuccess { voucher ->
+                if (totalPrice.value < voucher.minOrderValue) {
+                    onResult(false, "Đơn hàng chưa đạt mức tối thiểu")
+                } else if (voucher.usedCount >= voucher.usageLimit) {
+                    onResult(false, "Mã đã hết lượt")
+                } else {
+                    toggleVoucher(voucher)
+                    onResult(true, "Áp dụng thành công!")
+                }
+            }.onFailure {
+                onResult(false, "Mã không hợp lệ")
+            }
+        }
+    }
+
+    fun submitOrder(onSuccess: () -> Unit) {
+        val userId = auth.currentUser?.uid ?: ""
+        val address = getFullAddress()
+        if (name.value.isBlank() || phone.value.isBlank() || address.isBlank()) {
+            viewModelScope.launch { _uiEvent.send("Vui lòng nhập đủ thông tin giao hàng!") }
             return
         }
 
         viewModelScope.launch {
             _isProcessing.value = true
-
-            if (currentUserId != null) {
-                userRepository.updateUserShippingInfo(
-                    currentUserId, name.value, phone.value, fullAddress
-                )
-            }
-
-            val currentPaymentMethod = paymentMethod.value
-            val paymentStatus = if (currentPaymentMethod == "BANKING") "PAID" else "UNPAID"
-            val finalTotalAmount = totalPrice.value + 30000
+            val finalTotal = finalTotalPrice.value
 
             val newOrder = Order(
-                userId = currentUserId ?: "",
-                items = _displayItems.value,
-                totalPrice = totalPrice.value,
-                receiverName = name.value,
-                receiverPhone = phone.value,
-                address = fullAddress,
-                status = "PENDING",
-                paymentMethod = currentPaymentMethod,
-                paymentStatus = paymentStatus,
+                userId = userId, items = _displayItems.value, totalPrice = finalTotal,
+                receiverName = name.value, receiverPhone = phone.value, address = address,
+                status = "PENDING", paymentMethod = paymentMethod.value,
+                paymentStatus = if (paymentMethod.value == "BANKING") "PAID" else "UNPAID",
                 createdAt = System.currentTimeMillis()
             )
-            val result = orderRepository.createOrder(newOrder)
+            val dCode = _selectedDiscountVoucher.value?.code?.takeIf { it.isNotBlank() }
+            val fCode = _selectedFreeshipVoucher.value?.code?.takeIf { it.isNotBlank() }
 
-            if (result.isSuccess) {
-                if (!isBuyNowMode) {
-                    _displayItems.value.forEach { cartRepository.removeFromCart(it.product.id) }
-                }
-
-                val newOrderId = result.getOrNull().toString()
-
-                NotificationHelper.sendOrderNotificationToAdmin(
-                    context = context,
-                    orderId = newOrderId,
-                    totalAmount = finalTotalAmount.toDouble()
-                )
-
+            orderRepository.createOrder(newOrder, dCode, fCode).onSuccess { orderId ->
+                if (!isBuyNowMode) _displayItems.value.forEach { cartRepository.removeFromCart(it.product.id) }
+                NotificationHelper.sendOrderNotificationToAdmin(context, orderId, finalTotal.toDouble())
                 onSuccess()
-            } else {
-                _uiEvent.send("Lỗi: ${result.exceptionOrNull()?.message}")
+            }.onFailure { error ->
+                val errorMessage = error.message ?: "Có lỗi xảy ra, vui lòng thử lại!"
+                _uiEvent.send(errorMessage)
             }
+
             _isProcessing.value = false
         }
     }
@@ -123,112 +198,55 @@ class CheckoutViewModel @Inject constructor(
         val p = selectedProvince.value?.name ?: ""
         val d = selectedDistrict.value?.name ?: ""
         val w = selectedWard.value?.name ?: ""
-        val s = specificAddress.value
-        return if (p.isNotBlank() && d.isNotBlank() && w.isNotBlank()) "$s, $w, $d, $p" else s
+        return if (p.isNotBlank()) "${specificAddress.value}, $w, $d, $p" else specificAddress.value
     }
+
     private fun loadUserProfile(provinceList: List<Province>) {
         viewModelScope.launch {
-            val userId = auth.currentUser?.uid
-            if (userId != null) {
-                val user = userRepository.getUserProfile(userId)
-                if (user != null) {
+            auth.currentUser?.uid?.let { id ->
+                userRepository.getUserProfile(id)?.let { user ->
                     name.value = user.name
                     phone.value = user.phone
-                    if (user.shippingAddress.isNotBlank()) {
-                        parseAddressToDropdown(user.shippingAddress, provinceList)
-                    }
+                    if (user.shippingAddress.isNotBlank()) parseAddress(user.shippingAddress, provinceList)
                 }
             }
         }
     }
 
-    private fun parseAddressToDropdown(fullAddress: String, provinceList: List<Province>) {
+    private fun parseAddress(full: String, list: List<Province>) {
         try {
-            val parts = fullAddress.split(",").map { it.trim() }
+            val parts = full.split(",").map { it.trim() }
             if (parts.size >= 3) {
-                val pName = parts.last()
-                val dName = parts[parts.size - 2]
-                val wName = parts[parts.size - 3]
-                val specific = parts.take(parts.size - 3).joinToString(", ")
-                specificAddress.value = specific
-
-                val foundProvince = provinceList.find { it.name.equals(pName, ignoreCase = true) }
-                if (foundProvince != null) {
-                    selectedProvince.value = foundProvince
-                    val districtList = foundProvince.getDistrictList()
-                    _districts.value = districtList
-
-                    val foundDistrict = districtList.find { it.name.equals(dName, ignoreCase = true) }
-                    if (foundDistrict != null) {
-                        selectedDistrict.value = foundDistrict
-                        val wardList = foundDistrict.getWardList()
-                        _wards.value = wardList
-
-                        val foundWard = wardList.find { it.name.equals(wName, ignoreCase = true) }
-                        if (foundWard != null) {
-                            selectedWard.value = foundWard
-                        }
+                specificAddress.value = parts.dropLast(3).joinToString(", ")
+                list.find { it.name.equals(parts.last(), true) }?.let { p ->
+                    selectedProvince.value = p; _districts.value = p.getDistrictList()
+                    _districts.value.find { it.name.equals(parts[parts.size-2], true) }?.let { d ->
+                        selectedDistrict.value = d; _wards.value = d.getWardList()
+                        selectedWard.value = _wards.value.find { it.name.equals(parts[parts.size-3], true) }
                     }
                 }
-            } else {
-                specificAddress.value = fullAddress
-            }
-        } catch (e: Exception) {
-            specificAddress.value = fullAddress
-        }
+            } else specificAddress.value = full
+        } catch (e: Exception) { specificAddress.value = full }
     }
+
     fun loadSelectedCartItems() {
         isBuyNowMode = false
         viewModelScope.launch {
-            cartRepository.getCartItems().collect { list ->
-                val filtered = list.filter { it.isSelected }
-                _displayItems.value = filtered
-                _totalPrice.value = filtered.sumOf { it.totalPrice }
-            }
+            val list = cartRepository.getCartItems().first()
+            _displayItems.value = list.filter { it.isSelected }
         }
     }
 
-    fun loadSingleProductForCheckout(productId: String, quantity: Int) {
+    fun loadSingleProductForCheckout(id: String, q: Int) {
         isBuyNowMode = true
-        viewModelScope.launch {
-            val result = productRepository.getProductById(productId)
-            val product = result.getOrNull()
-
-            if (product != null) {
-                val dummyItem = CartItem(
-                    id = "temp_${System.currentTimeMillis()}",
-                    product = product,
-                    quantity = quantity,
-                    isSelected = true
-                )
-                _displayItems.value = listOf(dummyItem)
-                _totalPrice.value = (product.price * quantity).toLong()
-            } else {
-                _uiEvent.send("Không tìm thấy thông tin sản phẩm!")
-            }
-        }
+        viewModelScope.launch { productRepository.getProductById(id).onSuccess { p -> _displayItems.value = listOf(CartItem("temp", p!!, q, true)) } }
     }
 
-    fun onNameChange(newValue: String) { name.value = newValue }
-    fun onPhoneChange(newValue: String) { phone.value = newValue }
-    fun onPaymentMethodChange(method: String) { paymentMethod.value = method }
-    fun onSpecificAddressChange(newValue: String) { specificAddress.value = newValue }
-
-    fun onProvinceSelected(province: Province) {
-        selectedProvince.value = province
-        selectedDistrict.value = null
-        selectedWard.value = null
-        _districts.value = province.getDistrictList()
-        _wards.value = emptyList()
-    }
-
-    fun onDistrictSelected(district: District) {
-        selectedDistrict.value = district
-        selectedWard.value = null
-        _wards.value = district.getWardList()
-    }
-
-    fun onWardSelected(ward: Ward) {
-        selectedWard.value = ward
-    }
+    fun onNameChange(v: String) { name.value = v }
+    fun onPhoneChange(v: String) { phone.value = v }
+    fun onPaymentMethodChange(v: String) { paymentMethod.value = v }
+    fun onSpecificAddressChange(v: String) { specificAddress.value = v }
+    fun onProvinceSelected(p: Province) { selectedProvince.value = p; selectedDistrict.value = null; _districts.value = p.getDistrictList() }
+    fun onDistrictSelected(d: District) { selectedDistrict.value = d; selectedWard.value = null; _wards.value = d.getWardList() }
+    fun onWardSelected(w: Ward) { selectedWard.value = w }
 }

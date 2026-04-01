@@ -124,4 +124,10 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.2.0")
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
     implementation("com.github.jeziellago:compose-markdown:0.3.6")
+
+    implementation("androidx.compose.material3:material3:1.2.1")
+
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.11.0")
 }

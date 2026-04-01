@@ -37,7 +37,7 @@ import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Province
 import com.example.storepromax.domain.model.District
 import com.example.storepromax.domain.model.Ward
-import com.example.storepromax.presentation.checkout.SearchableDropdown
+import com.example.storepromax.presentation.component.SearchableDropdown
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

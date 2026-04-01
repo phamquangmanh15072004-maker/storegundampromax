@@ -27,11 +27,11 @@ import androidx.navigation.navArgument
 import com.cloudinary.android.MediaManager
 import com.example.storepromax.feature.product_detail.components.WriteReviewScreen
 import com.example.storepromax.presentation.admin.AdminDashboardScreen
-import com.example.storepromax.presentation.admin.AdminOrderDetailScreen
-import com.example.storepromax.presentation.admin.AdminOrderScreen
 import com.example.storepromax.presentation.admin.AdminStatsScreen
 import com.example.storepromax.presentation.admin.chat.AdminChatListScreen
 import com.example.storepromax.presentation.admin.feed.AdminFeedApprovalScreen
+import com.example.storepromax.presentation.admin.order.AdminOrderDetailScreen
+import com.example.storepromax.presentation.admin.order.AdminOrderScreen
 import com.example.storepromax.presentation.admin.product.AddProductScreen
 import com.example.storepromax.presentation.admin.product.AdminProductListScreen
 import com.example.storepromax.presentation.admin.user.AdminUserScreen
@@ -300,26 +300,18 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable(
-                        route = "checkout_screen?productId={productId}&quantity={quantity}",
+                        route = "checkout_screen?discountCode={discountCode}&freeshipCode={freeshipCode}",
                         arguments = listOf(
-                            navArgument("productId") {
-                                type = NavType.StringType
-                                nullable = true
-                                defaultValue = null
-                            },
-                            navArgument("quantity") {
-                                type = NavType.IntType
-                                defaultValue = -1
-                            }
+                            navArgument("discountCode") { type = NavType.StringType; defaultValue = "" },
+                            navArgument("freeshipCode") { type = NavType.StringType; defaultValue = "" }
                         )
                     ) { backStackEntry ->
-                        val productId = backStackEntry.arguments?.getString("productId")
-                        val quantity = backStackEntry.arguments?.getInt("quantity") ?: -1
-
+                        val dCode = backStackEntry.arguments?.getString("discountCode")
+                        val fCode = backStackEntry.arguments?.getString("freeshipCode")
                         CheckoutScreen(
                             navController = navController,
-                            productId = productId,
-                            quantity = if (quantity != -1) quantity else null
+                            discountCode = dCode,
+                            freeshipCode = fCode
                         )
                     }
                     composable(

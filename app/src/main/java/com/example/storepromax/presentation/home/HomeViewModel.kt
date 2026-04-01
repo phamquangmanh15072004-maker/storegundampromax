@@ -9,12 +9,10 @@ import com.example.storepromax.domain.repository.ProductRepository
 import com.example.storepromax.domain.repository.VoucherRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 @HiltViewModel
@@ -36,12 +34,19 @@ class HomeViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading = _isLoading.asStateFlow()
 
+    // 🌟 STATE CHO PULL-TO-REFRESH
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
+
+    // 🌟 STATE CHO LOAD MORE DƯỚI ĐÁY MÀN HÌNH
+    private val _isPaginating = MutableStateFlow(false)
+    val isPaginating = _isPaginating.asStateFlow()
+
     private val _selectedCategory = MutableStateFlow("All")
     val selectedCategory = _selectedCategory.asStateFlow()
 
     private var lastDocument: DocumentSnapshot? = null
     var isLastPage = false
-    var isPaginating = false
     private val pageSize = 4L
 
     private val _currentSortBy = MutableStateFlow("createdAt")
@@ -55,11 +60,13 @@ class HomeViewModel @Inject constructor(
 
     private val _currentMaxPrice = MutableStateFlow<Long?>(null)
     val currentMaxPrice = _currentMaxPrice.asStateFlow()
+
     private val _voucherOnHome = MutableStateFlow<List<com.example.storepromax.domain.model.Voucher>>(emptyList())
     val voucherOnHome = _voucherOnHome.asStateFlow()
 
     private val _userVoucherIds = MutableStateFlow<List<String>>(emptyList())
     val userVoucherIds = _userVoucherIds.asStateFlow()
+
     init {
         loadGlobalNewArrivals()
         loadInitialProducts()
@@ -71,55 +78,82 @@ class HomeViewModel @Inject constructor(
             _isLoading.value = true
             lastDocument = null
             isLastPage = false
-            isPaginating = false
+            _isPaginating.value = false
             _allProducts = mutableListOf()
 
             productRepository.getProductsPaginated(
                 pageSize, null, category, sortBy = _currentSortBy.value,
-                isAscending = _currentIsAscending.value,
-                minPrice = currentMinPrice.value,
-                maxPrice = currentMaxPrice.value
-            )
-                .onSuccess { (list, lastDoc) ->
-                    _allProducts.addAll(list)
-                    lastDocument = lastDoc
-                    if (list.size < pageSize) isLastPage = true
-                    _products.value = _allProducts.toList()
-                    _isLoading.value = false
-                }.onFailure {
-                    _isLoading.value = false
-                }
+                isAscending = _currentIsAscending.value, minPrice = currentMinPrice.value, maxPrice = currentMaxPrice.value
+            ).onSuccess { (list, lastDoc) ->
+                _allProducts.addAll(list)
+                lastDocument = lastDoc
+                if (list.size < pageSize) isLastPage = true
+                _products.value = _allProducts.toList()
+                _isLoading.value = false
+            }.onFailure {
+                _isLoading.value = false
+            }
+        }
+    }
+    fun refreshHomeData() {
+        if (_isRefreshing.value) return
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            productRepository.getProductsPaginated(
+                pageSize, null, _selectedCategory.value, sortBy = _currentSortBy.value,
+                isAscending = _currentIsAscending.value, minPrice = currentMinPrice.value, maxPrice = currentMaxPrice.value
+            ).onSuccess { (list, lastDoc) ->
+                _allProducts.clear()
+                _allProducts.addAll(list)
+                lastDocument = lastDoc
+                isLastPage = list.size < pageSize
+                _isPaginating.value = false
+                _products.value = _allProducts.toList()
+                _isRefreshing.value = false
+            }.onFailure {
+                _isRefreshing.value = false
+            }
+            loadGlobalNewArrivals()
+            loadVouchers()
+        }
+    }
+    fun silentSyncProducts() {
+        if (_allProducts.isEmpty()) return
+        viewModelScope.launch {
+            val currentLoadedSize = _allProducts.size.toLong()
+            productRepository.getProductsPaginated(
+                limit = currentLoadedSize, lastDocument = null, category = _selectedCategory.value,
+                sortBy = _currentSortBy.value, isAscending = _currentIsAscending.value,
+                minPrice = currentMinPrice.value, maxPrice = currentMaxPrice.value
+            ).onSuccess { (list, lastDoc) ->
+                _allProducts.clear()
+                _allProducts.addAll(list)
+                _products.value = _allProducts.toList()
+                lastDocument = lastDoc
+            }
         }
     }
 
     fun loadMoreProducts() {
-        if (isLastPage || isPaginating || _isLoading.value) return
+        if (isLastPage || _isPaginating.value || _isLoading.value || _isRefreshing.value) return
 
         viewModelScope.launch {
-            isPaginating = true
-
+            _isPaginating.value = true
             productRepository.getProductsPaginated(
                 pageSize, lastDocument, _selectedCategory.value, sortBy = currentSortBy.value,
-                isAscending = currentIsAscending.value,
-                minPrice = currentMinPrice.value,
-                maxPrice = currentMaxPrice.value
-            )
-                .onSuccess { (list, lastDoc) ->
-                    if (list.isNotEmpty()) {
-                        val uniqueNewItems = list.filter { newItem ->
-                            _allProducts.none { existingItem -> existingItem.id == newItem.id }
-                        }
-                        _allProducts.addAll(uniqueNewItems)
-                        lastDocument = lastDoc
-                        _products.value = _allProducts.toList()
-                    }
-                    if (list.size < pageSize) {
-                        isLastPage = true
-                    }
-                    isPaginating = false
-                }.onFailure {
-                    isPaginating = false
+                isAscending = currentIsAscending.value, minPrice = currentMinPrice.value, maxPrice = currentMaxPrice.value
+            ).onSuccess { (list, lastDoc) ->
+                if (list.isNotEmpty()) {
+                    val uniqueNewItems = list.filter { newItem -> _allProducts.none { existingItem -> existingItem.id == newItem.id } }
+                    _allProducts.addAll(uniqueNewItems)
+                    lastDocument = lastDoc
+                    _products.value = _allProducts.toList()
                 }
+                if (list.size < pageSize) isLastPage = true
+                _isPaginating.value = false
+            }.onFailure {
+                _isPaginating.value = false
+            }
         }
     }
 
@@ -138,68 +172,36 @@ class HomeViewModel @Inject constructor(
 
     fun getOrCreateSupportChat(onSuccess: (String) -> Unit) {
         viewModelScope.launch {
-            val result = chatRepo.getOrCreateSupportChannel()
-            result.onSuccess { channelId ->
-                onSuccess(channelId)
-            }
+            chatRepo.getOrCreateSupportChannel().onSuccess { channelId -> onSuccess(channelId) }
         }
     }
 
     fun addToCart(product: Product, quantity: Int, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             val result = cartRepository.addToCart(product, quantity)
-            if (result.isSuccess) {
-                onResult(true, "Đã thêm vào giỏ hàng!")
-            } else {
-                val errorMsg = result.exceptionOrNull()?.message ?: "Có lỗi xảy ra"
-                onResult(false, errorMsg)
-            }
+            if (result.isSuccess) onResult(true, "Đã thêm vào giỏ hàng!") else onResult(false, result.exceptionOrNull()?.message ?: "Có lỗi xảy ra")
         }
     }
 
     fun applyFilterAndSort(sortBy: String, isAsc: Boolean, min: Long?, max: Long?) {
-        _currentSortBy.value = sortBy
-        _currentIsAscending.value = isAsc
-        _currentMinPrice.value = min
-        _currentMaxPrice.value = max
+        _currentSortBy.value = sortBy; _currentIsAscending.value = isAsc; _currentMinPrice.value = min; _currentMaxPrice.value = max
         loadInitialProducts(_selectedCategory.value)
     }
 
-    fun clearPriceFilter() {
-        _currentMinPrice.value = null
-        _currentMaxPrice.value = null
-        loadInitialProducts(_selectedCategory.value)
-    }
+    fun clearPriceFilter() { _currentMinPrice.value = null; _currentMaxPrice.value = null; loadInitialProducts(_selectedCategory.value) }
+    fun clearSortFilter() { _currentSortBy.value = "createdAt"; _currentIsAscending.value = false; loadInitialProducts(_selectedCategory.value) }
 
-    fun clearSortFilter() {
-        _currentSortBy.value = "createdAt"
-        _currentIsAscending.value = false
-        loadInitialProducts(_selectedCategory.value)
-    }
     fun loadVouchers() {
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
         viewModelScope.launch {
-            voucherRepository.getAvailableVouchers().onSuccess {
-                _voucherOnHome.value = it
-            }
-            if (uid.isNotEmpty()) {
-                voucherRepository.getUserVouchers(uid).onSuccess { list ->
-                    _userVoucherIds.value = list.map { it.voucherId }
-                }
-            }
+            voucherRepository.getAvailableVouchers().onSuccess { _voucherOnHome.value = it }
+            if (uid.isNotEmpty()) voucherRepository.getUserVouchers(uid).onSuccess { list -> _userVoucherIds.value = list.map { it.voucherId } }
         }
     }
 
     fun claimVoucher(voucher: com.example.storepromax.domain.model.Voucher) {
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
-        if (uid.isEmpty()) {
-            return
-        }
-
-        viewModelScope.launch {
-            voucherRepository.claimVoucher(uid, voucher).onSuccess {
-                loadVouchers()
-            }
-        }
+        if (uid.isEmpty()) return
+        viewModelScope.launch { voucherRepository.claimVoucher(uid, voucher).onSuccess { loadVouchers() } }
     }
 }

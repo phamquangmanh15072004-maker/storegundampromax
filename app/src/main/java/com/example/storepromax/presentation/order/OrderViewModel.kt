@@ -25,15 +25,16 @@ class OrderViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
-    fun cancelOrder(orderId: String) {
+    fun cancelOrder(orderId: String, reason: String) {
         viewModelScope.launch {
             try {
-                orderRepository.cancelOrder(orderId)
+                orderRepository.cancelOrder(orderId, reason)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
     }
+
     fun placeOrder(order: Order, context: Context) {
         viewModelScope.launch {
             val result = orderRepository.createOrder(order)
@@ -44,7 +45,6 @@ class OrderViewModel @Inject constructor(
                     totalAmount = order.totalPrice.toDouble()
                 )
             }
-
             result.onFailure { exception ->
             }
         }

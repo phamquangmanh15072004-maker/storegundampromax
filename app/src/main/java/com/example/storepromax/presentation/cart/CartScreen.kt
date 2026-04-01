@@ -1,6 +1,12 @@
 package com.example.storepromax.presentation.cart
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ConfirmationNumber
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.LocalShipping
@@ -25,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -112,13 +120,17 @@ fun CartScreen(
                             if (item.isSelected != !isAllSelected) viewModel.toggleSelection(item)
                         }
                     },
-                    onCheckout = { navController.navigate("checkout_screen") },
+                    onCheckout = {
+                        val dCode = selectedDiscount?.code ?: ""
+                        val fCode = selectedFreeship?.code ?: ""
+                        navController.navigate("checkout_screen?discountCode=$dCode&freeshipCode=$fCode")
+                    },
                     modifier = Modifier.zIndex(2f)
                 )
 
                 VoucherSelectionRow(
-                    productDiscount = productDiscount, // 🌟 Truyền tiền giảm SP vào
-                    freeshipAmount = freeshipAmount,   // 🌟 Truyền tiền Freeship vào
+                    productDiscount = productDiscount,
+                    freeshipAmount = freeshipAmount,
                     onClick = { showVoucherSheet = true },
                     modifier = Modifier.zIndex(1f)
                 )
@@ -186,7 +198,7 @@ fun VoucherSelectionRow(
         ) {
             Icon(Icons.Default.ConfirmationNumber, contentDescription = null, tint = GunplaBlue)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("StoreProMax Voucher", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text("Voucher", fontSize = 14.sp, fontWeight = FontWeight.Medium)
             Spacer(modifier = Modifier.weight(1f))
             Column(horizontalAlignment = Alignment.End) {
                 if (productDiscount == 0L && freeshipAmount == 0L) {
@@ -374,15 +386,26 @@ fun CheckoutTopBar(
                 }
             }
             Button(
-                onClick = onCheckout, enabled = isEnabled, shape = RoundedCornerShape(8.dp),
+                onClick = onCheckout,
+                enabled = isEnabled,
+                shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue),
-                modifier = Modifier.height(48.dp)
-            ) { Text("MUA HÀNG ($totalSelectedCount)", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier
+                    .height(48.dp)
+                    .widthIn(min = 110.dp)
+            ) {
+                Text(
+                    text = "MUA HÀNG ($totalSelectedCount)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
-
-// 🌟 WRAPPER ANIMATION XÓA VUỐT NGANG MƯỢT MÀ
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnimatedCartItem(
@@ -395,12 +418,14 @@ fun AnimatedCartItem(
     onQuantityChange: (Int) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
+    var isDeleted by remember { mutableStateOf(false) }
 
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { state ->
             if (state == SwipeToDismissBoxValue.EndToStart) {
+                isDeleted = true
                 coroutineScope.launch {
-                    delay(150) // Delay nhẹ để thấy animation vuốt rồi mới xóa data
+                    delay(300)
                     onDelete()
                 }
                 true
@@ -408,27 +433,46 @@ fun AnimatedCartItem(
         }
     )
 
-    SwipeToDismissBox(
-        state = dismissState,
-        enableDismissFromStartToEnd = false,
-        modifier = modifier.padding(horizontal = 16.dp), // Thụt lề ngoài cho Card
-        backgroundContent = {
-            val color = if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) AlertRed else Color.LightGray
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(color)
-                    .padding(end = 24.dp),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                Text("Xóa", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    androidx.compose.animation.AnimatedVisibility(
+        visible = !isDeleted,
+        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(
+            animationSpec = androidx.compose.animation.core.tween(durationMillis = 300)
+        ),
+        // 🌟 1. GIẢM PADDING NGOÀI TỪ 16dp -> 8dp ĐỂ MỞ RỘNG DIỆN TÍCH
+        modifier = modifier.padding(horizontal = 8.dp)
+    ) {
+        SwipeToDismissBox(
+            state = dismissState,
+            enableDismissFromStartToEnd = false,
+            backgroundContent = {
+                val isSwiping = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart
+                val color = if (isSwiping) AlertRed else Color.Transparent
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(vertical = 2.dp) // Cách đều mép trên dưới
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(color)
+                        .padding(end = 24.dp),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    if (isSwiping) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "Xóa",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+            },
+            content = {
+                CartItemRow(item, onToggle, onIncrease, onDecrease, onQuantityChange)
             }
-        },
-        content = {
-            CartItemRow(item, onToggle, onIncrease, onDecrease, onQuantityChange)
-        }
-    )
+        )
+    }
 }
 
 @Composable
@@ -444,30 +488,35 @@ fun CartItemRow(
     Surface(
         color = Color.White,
         shape = RoundedCornerShape(8.dp),
-        shadowElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth()
+        shadowElevation = 0.5.dp, // Đổ bóng nhẹ nhàng hơn
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
     ) {
         Row(
-            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+            // 🌟 2. GIẢM PADDING TRONG TỪ 12dp -> 8dp
+            modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 8.dp, end = 8.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Checkbox(
-                checked = item.isSelected,
-                onCheckedChange = { onToggle() },
-                colors = CheckboxDefaults.colors(checkedColor = GunplaBlue, uncheckedColor = Color.LightGray)
-            )
+            // 🌟 3. THU NHỎ CHECKBOX NHƯ SHOPEE
+            Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                Checkbox(
+                    checked = item.isSelected,
+                    onCheckedChange = { onToggle() },
+                    colors = CheckboxDefaults.colors(checkedColor = GunplaBlue, uncheckedColor = Color.LightGray),
+                    modifier = Modifier.scale(0.85f) // Bóp nhỏ checkbox lại 15%
+                )
+            }
 
             AsyncImage(
                 model = item.product.imageUrl,
                 contentDescription = null,
                 modifier = Modifier
                     .size(80.dp)
-                    .border(1.dp, BorderGray, RoundedCornerShape(4.dp))
+                    .border(0.5.dp, BorderGray, RoundedCornerShape(4.dp))
                     .clip(RoundedCornerShape(4.dp)),
                 contentScale = ContentScale.Crop
             )
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
             Column(
                 modifier = Modifier.weight(1f).height(80.dp),
@@ -476,41 +525,32 @@ fun CartItemRow(
                 Text(
                     text = item.product.name,
                     color = Color(0xFF222222),
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Normal,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
                 )
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        text = "₫${formatter.format(item.product.price)}",
-                        color = AlertRed,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                    AutoResizePriceText(
+                        price = item.product.price,
+                        modifier = Modifier.weight(1f).padding(end = 6.dp)
                     )
-
                     Row(
                         modifier = Modifier
-                            .height(28.dp)
-                            .border(1.dp, BorderGray, RoundedCornerShape(4.dp)),
+                            .height(26.dp)
+                            .border(0.5.dp, BorderGray, RoundedCornerShape(4.dp))
+                            .clip(RoundedCornerShape(4.dp)),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         QuantityBtn(Icons.Default.Remove, item.quantity > 1, onDecrease)
-                        Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(BorderGray))
-
-                        InlineQuantityInput(
-                            quantity = item.quantity,
-                            maxStock = item.product.stock,
-                            onQuantityChange = onQuantityChange
-                        )
-
-                        Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(BorderGray))
+                        Box(modifier = Modifier.width(0.5.dp).fillMaxHeight().background(BorderGray))
+                        InlineQuantityInput(item.quantity, item.product.stock, onQuantityChange)
+                        Box(modifier = Modifier.width(0.5.dp).fillMaxHeight().background(BorderGray))
                         QuantityBtn(Icons.Default.Add, item.quantity < item.product.stock, onIncrease)
                     }
                 }
@@ -541,9 +581,9 @@ fun InlineQuantityInput(quantity: Int, maxStock: Int, onQuantityChange: (Int) ->
                 focusManager.clearFocus()
             }
         ),
-        textStyle = TextStyle(color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+        textStyle = TextStyle(color = Color.Black, fontSize = 13.sp, textAlign = TextAlign.Center),
         cursorBrush = SolidColor(GunplaBlue),
-        modifier = Modifier.width(42.dp).wrapContentHeight(),
+        modifier = Modifier.width(36.dp).wrapContentHeight(), // Rộng vừa đủ
         decorationBox = { innerTextField ->
             Box(contentAlignment = Alignment.Center) {
                 if (textValue.isEmpty()) Text("1", color = Color.Transparent)
@@ -557,7 +597,7 @@ fun InlineQuantityInput(quantity: Int, maxStock: Int, onQuantityChange: (Int) ->
 fun QuantityBtn(icon: ImageVector, isEnabled: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .width(28.dp)
+            .width(26.dp) // Nút bấm vừa tay
             .fillMaxHeight()
             .background(if (isEnabled) Color.White else Color(0xFFFAFAFA))
             .clickable(enabled = isEnabled) { onClick() },
@@ -566,8 +606,8 @@ fun QuantityBtn(icon: ImageVector, isEnabled: Boolean, onClick: () -> Unit) {
         Icon(
             icon,
             contentDescription = null,
-            tint = if (isEnabled) Color.DarkGray else Color.LightGray,
-            modifier = Modifier.size(16.dp)
+            tint = if (isEnabled) Color.DarkGray else Color(0xFFD0D0D0),
+            modifier = Modifier.size(14.dp) // Icon bé gọn lại
         )
     }
 }
@@ -578,7 +618,32 @@ fun EmptyCartView(modifier: Modifier = Modifier) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Default.DeleteOutline, null, modifier = Modifier.size(80.dp), tint = Color.LightGray)
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Giỏ hàng của bạn đang trống", color = Color.Gray, fontSize = 16.sp)
+            Text("Giỏ hàng của bạn đang trống", color = Color.Gray, fontSize = 15.sp)
         }
     }
+}
+@Composable
+fun AutoResizePriceText(
+    price: Long,
+    modifier: Modifier = Modifier
+) {
+    val formatter = DecimalFormat("#,###")
+    val textString = "₫${formatter.format(price)}"
+
+    var textSize by remember { mutableStateOf(15.sp) }
+
+    Text(
+        text = textString,
+        color = AlertRed,
+        fontWeight = FontWeight.Bold,
+        fontSize = textSize,
+        maxLines = 1,
+        softWrap = false,
+        modifier = modifier,
+        onTextLayout = { textLayoutResult ->
+            if (textLayoutResult.hasVisualOverflow) {
+                textSize *= 0.9f
+            }
+        }
+    )
 }

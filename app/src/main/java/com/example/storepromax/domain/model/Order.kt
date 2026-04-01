@@ -18,5 +18,6 @@ data class Order(
     val paymentStatus: String = "UNPAID",
 
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val cancelReason: String = ""
 )

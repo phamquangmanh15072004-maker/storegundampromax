@@ -1,12 +1,10 @@
-package com.example.storepromax.presentation.admin
+package com.example.storepromax.presentation.admin.order
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.storepromax.admin.utils.NotificationHelper // Import file Helper vừa tạo
-import com.example.storepromax.domain.model.Order
+import com.example.storepromax.admin.utils.NotificationHelper
 import com.example.storepromax.domain.repository.OrderRepository
-import com.example.storepromax.domain.repository.ProductRepository
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -26,7 +24,6 @@ object OrderStatus {
 @HiltViewModel
 class AdminOrderViewModel @Inject constructor(
     private val orderRepository: OrderRepository,
-    private val productRepository: ProductRepository,
     private val firestore: FirebaseFirestore,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -42,7 +39,8 @@ class AdminOrderViewModel @Inject constructor(
         } else {
             orders.filter { order ->
                 order.id.contains(query, ignoreCase = true) ||
-                        (order.receiverName).contains(query, ignoreCase = true)
+                        order.receiverName.contains(query, ignoreCase = true) ||
+                        order.receiverPhone.contains(query, ignoreCase = true) // Cải tiến: Tìm theo SĐT
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -50,8 +48,6 @@ class AdminOrderViewModel @Inject constructor(
     fun onSearchQueryChange(query: String) {
         _searchQuery.value = query
     }
-
-
     fun updateStatus(orderId: String, currentStatus: String) {
         viewModelScope.launch {
             val nextStatus = when (currentStatus) {
@@ -60,33 +56,18 @@ class AdminOrderViewModel @Inject constructor(
                 OrderStatus.SHIPPING -> OrderStatus.DELIVERED
                 else -> return@launch
             }
-
-            if (currentStatus == OrderStatus.PENDING && nextStatus == OrderStatus.CONFIRMED) {
+            orderRepository.updateOrderStatus(orderId, nextStatus).onSuccess {
                 val currentOrder = _allOrders.first().find { it.id == orderId }
-                currentOrder?.items?.forEach { cartItem ->
-                    productRepository.updateProductStock(cartItem.product.id, -cartItem.quantity)
+                if (currentOrder != null) {
+                    sendNotificationToUser(currentOrder.userId, currentOrder.id, nextStatus)
                 }
-            }
-            orderRepository.updateOrderStatus(orderId, nextStatus)
-
-            val currentOrder = _allOrders.first().find { it.id == orderId }
-            if (currentOrder != null) {
-                sendNotificationToUser(currentOrder.userId, currentOrder.id, nextStatus)
             }
         }
     }
-
-    fun cancelOrder(orderId: String, reason: String = "Admin hủy đơn") {
+    fun cancelOrder(orderId: String, reason: String) {
         viewModelScope.launch {
+            orderRepository.cancelOrder(orderId, reason)
             val currentOrder = _allOrders.first().find { it.id == orderId }
-
-            if (currentOrder != null &&
-                (currentOrder.status == OrderStatus.CONFIRMED || currentOrder.status == OrderStatus.SHIPPING)) {
-                currentOrder.items.forEach { cartItem ->
-                    productRepository.updateProductStock(cartItem.product.id, cartItem.quantity)
-                }
-            }
-            orderRepository.updateOrderStatus(orderId, OrderStatus.CANCELLED)
             if (currentOrder != null) {
                 sendNotificationToUser(currentOrder.userId, currentOrder.id, OrderStatus.CANCELLED, reason)
             }

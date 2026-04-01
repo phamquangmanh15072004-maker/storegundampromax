@@ -1,4 +1,4 @@
-package com.example.storepromax.presentation.admin
+package com.example.storepromax.presentation.admin.order
 
 import android.content.Intent
 import android.net.Uri
@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,11 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.example.storepromax.domain.model.Order
-import com.example.storepromax.presentation.admin.order.AdminOrderDetailViewModel
 import java.text.DecimalFormat
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,9 +39,9 @@ fun AdminOrderDetailScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
 
-    // Màu sắc Light Theme
+    var showCancelDialog by remember { mutableStateOf(false) }
+
     val bgLight = Color(0xFFF5F5F5)
-    val primaryColor = Color(0xFF007AFF)
 
     if (order == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -55,7 +50,6 @@ fun AdminOrderDetailScreen(
 
     val currentOrder = order!!
     val formatter = DecimalFormat("#,###")
-    val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
 
     Scaffold(
         topBar = {
@@ -78,57 +72,32 @@ fun AdminOrderDetailScreen(
         bottomBar = {
             BottomActionBar(
                 status = currentOrder.status,
-                onUpdateStatus = { newStatus -> viewModel.updateStatus(newStatus) }
+                onUpdateStatus = { newStatus -> viewModel.updateStatus(newStatus) },
+                onCancelClick = { showCancelDialog = true } // Bật Dialog thay vì gọi update status
             )
         }
     ) { padding ->
         Column(
-            modifier = Modifier
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+            modifier = Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-
             SectionCard(title = "Thông tin giao hàng", icon = Icons.Default.LocalShipping) {
-                // Tên khách
                 InfoRow(icon = Icons.Default.Person, label = "Người nhận", value = currentOrder.receiverName)
                 Divider(color = Color(0xFFEEEEEE))
-
-                InfoRow(
-                    icon = Icons.Default.Phone,
-                    label = "Điện thoại",
-                    value = currentOrder.receiverPhone,
-                    isLink = true,
-                    onClick = {
-                        val intent = Intent(Intent.ACTION_DIAL).apply {
-                            data = Uri.parse("tel:${currentOrder.receiverPhone}")
-                        }
-                        context.startActivity(intent)
-                    }
-                )
+                InfoRow(icon = Icons.Default.Phone, label = "Điện thoại", value = currentOrder.receiverPhone, isLink = true, onClick = {
+                    context.startActivity(Intent(Intent.ACTION_DIAL).apply { data = Uri.parse("tel:${currentOrder.receiverPhone}") })
+                })
                 Divider(color = Color(0xFFEEEEEE))
-
-                InfoRow(
-                    icon = Icons.Default.LocationOn,
-                    label = "Địa chỉ",
-                    value = currentOrder.address,
-                    isCopyable = true,
-                    onClick = {
-                        clipboardManager.setText(AnnotatedString(currentOrder.address))
-                        Toast.makeText(context, "Đã copy địa chỉ!", Toast.LENGTH_SHORT).show()
-                    }
-                )
+                InfoRow(icon = Icons.Default.LocationOn, label = "Địa chỉ", value = currentOrder.address, isCopyable = true, onClick = {
+                    clipboardManager.setText(AnnotatedString(currentOrder.address))
+                    Toast.makeText(context, "Đã copy địa chỉ!", Toast.LENGTH_SHORT).show()
+                })
             }
 
             SectionCard(title = "Danh sách sản phẩm (${currentOrder.items.size})", icon = Icons.Default.ShoppingCart) {
                 currentOrder.items.forEach { item ->
                     Row(modifier = Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(
-                            model = item.product.imageUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(50.dp).background(Color.Gray, RoundedCornerShape(4.dp))
-                        )
+                        AsyncImage(model = item.product.imageUrl, contentDescription = null, modifier = Modifier.size(50.dp).background(Color.Gray, RoundedCornerShape(4.dp)))
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(item.product.name, fontWeight = FontWeight.Medium, maxLines = 2)
@@ -149,17 +118,8 @@ fun AdminOrderDetailScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Trạng thái:", modifier = Modifier.weight(1f), color = Color.Gray)
-                    Surface(
-                        color = if (isPaid) Color(0xFFE8F5E9) else Color(0xFFFFF3E0),
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = if (isPaid) "ĐÃ THANH TOÁN" else "CHƯA THANH TOÁN",
-                            color = if (isPaid) Color(0xFF2E7D32) else Color(0xFFE65100),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                    Surface(color = if (isPaid) Color(0xFFE8F5E9) else Color(0xFFFFF3E0), shape = RoundedCornerShape(4.dp)) {
+                        Text(if (isPaid) "ĐÃ THANH TOÁN" else "CHƯA THANH TOÁN", color = if (isPaid) Color(0xFF2E7D32) else Color(0xFFE65100), fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                     }
                 }
                 Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
@@ -168,25 +128,49 @@ fun AdminOrderDetailScreen(
                     Text("₫${formatter.format(currentOrder.totalPrice)}", fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F), fontSize = 18.sp)
                 }
             }
-
-            Spacer(modifier = Modifier.height(80.dp)) // Padding cho BottomBar
+            if (currentOrder.status == "CANCELLED" && !currentOrder.cancelReason.isNullOrBlank()) {
+                Surface(
+                    color = Color(0xFFFFF0F0),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFD32F2F), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Thông tin hủy đơn", fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F))
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Lý do: ${currentOrder.cancelReason}",
+                            color = Color(0xFFC62828),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(80.dp))
         }
+    }
+    if (showCancelDialog) {
+        CancelOrderDialog(
+            onDismiss = { showCancelDialog = false },
+            onConfirm = { reason ->
+                viewModel.cancelOrder(reason)
+                showCancelDialog = false
+            }
+        )
     }
 }
 
-// --- COMPONENTS ---
-
 @Composable
-fun BottomActionBar(status: String, onUpdateStatus: (String) -> Unit) {
+fun BottomActionBar(status: String, onUpdateStatus: (String) -> Unit, onCancelClick: () -> Unit) {
     Surface(shadowElevation = 16.dp, color = Color.White) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Logic nút bấm thay đổi theo trạng thái
+        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             when (status) {
                 "PENDING" -> {
-                    ActionButton(text = "Hủy đơn", color = Color.Red, isOutlined = true, modifier = Modifier.weight(1f)) { onUpdateStatus("CANCELLED") }
+                    ActionButton(text = "Hủy đơn", color = Color.Red, isOutlined = true, modifier = Modifier.weight(1f)) { onCancelClick() }
                     ActionButton(text = "Xác nhận đơn", color = Color(0xFF007AFF), modifier = Modifier.weight(1f)) { onUpdateStatus("CONFIRMED") }
                 }
                 "CONFIRMED" -> {
@@ -195,12 +179,8 @@ fun BottomActionBar(status: String, onUpdateStatus: (String) -> Unit) {
                 "SHIPPING" -> {
                     ActionButton(text = "Xác nhận đã giao", color = Color(0xFF2E7D32), modifier = Modifier.weight(1f)) { onUpdateStatus("DELIVERED") }
                 }
-                "DELIVERED" -> {
-                    Text("Đơn hàng đã hoàn tất", modifier = Modifier.fillMaxWidth(), color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                }
-                "CANCELLED" -> {
-                    Text("Đơn hàng đã bị hủy", modifier = Modifier.fillMaxWidth(), color = Color.Red, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                }
+                "DELIVERED" -> Text("Đơn hàng đã hoàn tất", modifier = Modifier.fillMaxWidth(), color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                "CANCELLED" -> Text("Đơn hàng đã bị hủy", modifier = Modifier.fillMaxWidth(), color = Color.Red, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
     }
@@ -209,31 +189,15 @@ fun BottomActionBar(status: String, onUpdateStatus: (String) -> Unit) {
 @Composable
 fun ActionButton(text: String, color: Color, isOutlined: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     if (isOutlined) {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = modifier.height(48.dp),
-            shape = RoundedCornerShape(8.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, color),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = color)
-        ) { Text(text) }
+        OutlinedButton(onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(8.dp), border = androidx.compose.foundation.BorderStroke(1.dp, color), colors = ButtonDefaults.outlinedButtonColors(contentColor = color)) { Text(text) }
     } else {
-        Button(
-            onClick = onClick,
-            modifier = modifier.height(48.dp),
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = color)
-        ) { Text(text) }
+        Button(onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = color)) { Text(text) }
     }
 }
 
 @Composable
 fun SectionCard(title: String, icon: ImageVector, content: @Composable () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(2.dp),
-        shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(2.dp), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, contentDescription = null, tint = Color(0xFF007AFF))
@@ -248,26 +212,13 @@ fun SectionCard(title: String, icon: ImageVector, content: @Composable () -> Uni
 
 @Composable
 fun InfoRow(icon: ImageVector, label: String, value: String, isLink: Boolean = false, isCopyable: Boolean = false, onClick: (() -> Unit)? = null) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .clickable(enabled = onClick != null) { onClick?.invoke() },
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable(enabled = onClick != null) { onClick?.invoke() }, verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(label, fontSize = 12.sp, color = Color.Gray)
-            Text(
-                text = value,
-                fontWeight = FontWeight.Medium,
-                color = if (isLink) Color(0xFF007AFF) else Color.Black,
-                fontSize = 15.sp
-            )
+            Text(text = value, fontWeight = FontWeight.Medium, color = if (isLink) Color(0xFF007AFF) else Color.Black, fontSize = 15.sp)
         }
-        if (isCopyable) {
-            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color.LightGray)
-        }
+        if (isCopyable) Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color.LightGray)
     }
 }
