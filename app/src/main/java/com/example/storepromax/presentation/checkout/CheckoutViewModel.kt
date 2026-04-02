@@ -4,18 +4,19 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.storepromax.admin.utils.NotificationHelper
+import com.example.storepromax.data.api.GHNRetrofit
 import com.example.storepromax.domain.model.CartItem
-import com.example.storepromax.domain.model.District
+import com.example.storepromax.domain.model.DistrictGHN
+import com.example.storepromax.domain.model.GHNFeeRequest
 import com.example.storepromax.domain.model.Order
-import com.example.storepromax.domain.model.Province
+import com.example.storepromax.domain.model.ProvinceGHN
 import com.example.storepromax.domain.model.Voucher
-import com.example.storepromax.domain.model.Ward
+import com.example.storepromax.domain.model.WardGHN
 import com.example.storepromax.domain.repository.AuthRepository
 import com.example.storepromax.domain.repository.CartRepository
 import com.example.storepromax.domain.repository.OrderRepository
 import com.example.storepromax.domain.repository.ProductRepository
 import com.example.storepromax.domain.repository.VoucherRepository
-import com.example.storepromax.utils.AddressUtils
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -50,11 +51,11 @@ class CheckoutViewModel @Inject constructor(
 
     private var initialDiscountCode: String? = null
     private var initialFreeshipCode: String? = null
+    private val _shippingFee = MutableStateFlow(0L)
+    val shippingFee = _shippingFee.asStateFlow()
 
+    private val MY_SHOP_ID = 6359956
     val totalPrice: StateFlow<Long> = _displayItems.map { list -> list.sumOf { it.totalPrice } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
-
-    val shippingFee: StateFlow<Long> = totalPrice.map { if (it > 0) 30000L else 0L }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
     val productDiscountAmount: StateFlow<Long> = combine(totalPrice, _selectedDiscountVoucher) { total, v ->
@@ -82,17 +83,18 @@ class CheckoutViewModel @Inject constructor(
     val phone = MutableStateFlow("")
     val specificAddress = MutableStateFlow("")
     val paymentMethod = MutableStateFlow("COD")
-
-    private val _provinces = MutableStateFlow<List<Province>>(emptyList())
+    private val _provinces = MutableStateFlow<List<ProvinceGHN>>(emptyList())
     val provinces = _provinces.asStateFlow()
-    private val _districts = MutableStateFlow<List<District>>(emptyList())
+
+    private val _districts = MutableStateFlow<List<DistrictGHN>>(emptyList())
     val districts = _districts.asStateFlow()
-    private val _wards = MutableStateFlow<List<Ward>>(emptyList())
+
+    private val _wards = MutableStateFlow<List<WardGHN>>(emptyList())
     val wards = _wards.asStateFlow()
 
-    val selectedProvince = MutableStateFlow<Province?>(null)
-    val selectedDistrict = MutableStateFlow<District?>(null)
-    val selectedWard = MutableStateFlow<Ward?>(null)
+    val selectedProvince = MutableStateFlow<ProvinceGHN?>(null)
+    val selectedDistrict = MutableStateFlow<DistrictGHN?>(null)
+    val selectedWard = MutableStateFlow<WardGHN?>(null)
 
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing
@@ -101,13 +103,102 @@ class CheckoutViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val provinceList = AddressUtils(context).getProvinces()
-            _provinces.value = provinceList
-            loadUserProfile(provinceList)
             refreshVouchers()
+            fetchProvincesFromGHN()
+            viewModelScope.launch {
+                _provinces.collect { provinceList ->
+                    if (provinceList.isNotEmpty()) {
+                        loadUserProfile()
+                    }
+                }
+            }
         }
     }
 
+    private suspend fun fetchProvincesFromGHN() {
+        try {
+            val response = GHNRetrofit.api.getProvinces()
+            if (response.code == 200 && response.data != null) {
+                _provinces.value = response.data
+            }
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+
+    fun onProvinceSelected(p: ProvinceGHN) {
+        selectedProvince.value = p
+        selectedDistrict.value = null
+        selectedWard.value = null
+        _districts.value = emptyList()
+        _wards.value = emptyList()
+
+        viewModelScope.launch {
+            try {
+                val response = GHNRetrofit.api.getDistricts(p.provinceID)
+                if (response.code == 200 && response.data != null) {
+                    _districts.value = response.data
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    fun onDistrictSelected(d: DistrictGHN) {
+        selectedDistrict.value = d
+        selectedWard.value = null
+        _wards.value = emptyList()
+
+        viewModelScope.launch {
+            try {
+                val response = GHNRetrofit.api.getWards(d.districtID)
+                if (response.code == 200 && response.data != null) {
+                    _wards.value = response.data
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    fun onWardSelected(w: WardGHN) {
+        selectedWard.value = w
+        calculateShippingFee()
+    }
+
+    private fun calculateShippingFee() {
+        val dId = selectedDistrict.value?.districtID ?: return
+        val wCode = selectedWard.value?.wardCode ?: return
+
+        val totalWeight = 500
+        val orderValue = totalPrice.value
+
+        viewModelScope.launch {
+            try {
+                _shippingFee.value = 0L
+
+                val request = GHNFeeRequest(
+                    to_district_id = dId,
+                    to_ward_code = wCode,
+                    weight = totalWeight,
+                    insurance_value = orderValue
+                )
+
+                val response = GHNRetrofit.api.calculateFee(MY_SHOP_ID, request)
+
+                if (response.code == 200 && response.data != null) {
+                    _shippingFee.value = response.data.total
+                } else {
+                    _shippingFee.value = 30000L
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _shippingFee.value = 30000L
+            }
+        }
+    }
+
+    private fun getFullAddress(): String {
+        val p = selectedProvince.value?.provinceName ?: ""
+        val d = selectedDistrict.value?.districtName ?: ""
+        val w = selectedWard.value?.wardName ?: ""
+        return if (p.isNotBlank()) "${specificAddress.value}, $w, $d, $p" else specificAddress.value
+    }
     fun refreshVouchers() {
         val userId = auth.currentUser?.uid ?: return
         viewModelScope.launch {
@@ -117,21 +208,19 @@ class CheckoutViewModel @Inject constructor(
             }
         }
     }
+
     fun setInitialVouchers(dCode: String?, fCode: String?) {
         if (!dCode.isNullOrBlank() && dCode != "null" && dCode != "{discountCode}") initialDiscountCode = dCode
         if (!fCode.isNullOrBlank() && fCode != "null" && fCode != "{freeshipCode}") initialFreeshipCode = fCode
         applyPendingVouchers()
     }
+
     private fun applyPendingVouchers() {
         val list = _availableVouchers.value
         if (list.isEmpty()) return
 
-        initialDiscountCode?.let { code ->
-            list.find { it.code == code }?.let { _selectedDiscountVoucher.value = it }
-        }
-        initialFreeshipCode?.let { code ->
-            list.find { it.code == code }?.let { _selectedFreeshipVoucher.value = it }
-        }
+        initialDiscountCode?.let { code -> list.find { it.code == code }?.let { _selectedDiscountVoucher.value = it } }
+        initialFreeshipCode?.let { code -> list.find { it.code == code }?.let { _selectedFreeshipVoucher.value = it } }
     }
 
     fun toggleVoucher(voucher: Voucher) {
@@ -145,25 +234,18 @@ class CheckoutViewModel @Inject constructor(
     fun applyVoucherByCode(code: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             voucherRepository.getVoucherByCode(code.uppercase().trim()).onSuccess { voucher ->
-                if (totalPrice.value < voucher.minOrderValue) {
-                    onResult(false, "Đơn hàng chưa đạt mức tối thiểu")
-                } else if (voucher.usedCount >= voucher.usageLimit) {
-                    onResult(false, "Mã đã hết lượt")
-                } else {
-                    toggleVoucher(voucher)
-                    onResult(true, "Áp dụng thành công!")
-                }
-            }.onFailure {
-                onResult(false, "Mã không hợp lệ")
-            }
+                if (totalPrice.value < voucher.minOrderValue) onResult(false, "Đơn hàng chưa đạt mức tối thiểu")
+                else if (voucher.usedCount >= voucher.usageLimit) onResult(false, "Mã đã hết lượt")
+                else { toggleVoucher(voucher); onResult(true, "Áp dụng thành công!") }
+            }.onFailure { onResult(false, "Mã không hợp lệ") }
         }
     }
 
     fun submitOrder(onSuccess: () -> Unit) {
         val userId = auth.currentUser?.uid ?: ""
         val address = getFullAddress()
-        if (name.value.isBlank() || phone.value.isBlank() || address.isBlank()) {
-            viewModelScope.launch { _uiEvent.send("Vui lòng nhập đủ thông tin giao hàng!") }
+        if (name.value.isBlank() || phone.value.isBlank() || selectedProvince.value == null || selectedDistrict.value == null || selectedWard.value == null || specificAddress.value.isBlank()) {
+            viewModelScope.launch { _uiEvent.send("Vui lòng chọn đầy đủ địa chỉ giao hàng!") }
             return
         }
 
@@ -186,49 +268,12 @@ class CheckoutViewModel @Inject constructor(
                 NotificationHelper.sendOrderNotificationToAdmin(context, orderId, finalTotal.toDouble())
                 onSuccess()
             }.onFailure { error ->
-                val errorMessage = error.message ?: "Có lỗi xảy ra, vui lòng thử lại!"
-                _uiEvent.send(errorMessage)
+                _uiEvent.send(error.message ?: "Có lỗi xảy ra, vui lòng thử lại!")
             }
 
             _isProcessing.value = false
         }
     }
-
-    private fun getFullAddress(): String {
-        val p = selectedProvince.value?.name ?: ""
-        val d = selectedDistrict.value?.name ?: ""
-        val w = selectedWard.value?.name ?: ""
-        return if (p.isNotBlank()) "${specificAddress.value}, $w, $d, $p" else specificAddress.value
-    }
-
-    private fun loadUserProfile(provinceList: List<Province>) {
-        viewModelScope.launch {
-            auth.currentUser?.uid?.let { id ->
-                userRepository.getUserProfile(id)?.let { user ->
-                    name.value = user.name
-                    phone.value = user.phone
-                    if (user.shippingAddress.isNotBlank()) parseAddress(user.shippingAddress, provinceList)
-                }
-            }
-        }
-    }
-
-    private fun parseAddress(full: String, list: List<Province>) {
-        try {
-            val parts = full.split(",").map { it.trim() }
-            if (parts.size >= 3) {
-                specificAddress.value = parts.dropLast(3).joinToString(", ")
-                list.find { it.name.equals(parts.last(), true) }?.let { p ->
-                    selectedProvince.value = p; _districts.value = p.getDistrictList()
-                    _districts.value.find { it.name.equals(parts[parts.size-2], true) }?.let { d ->
-                        selectedDistrict.value = d; _wards.value = d.getWardList()
-                        selectedWard.value = _wards.value.find { it.name.equals(parts[parts.size-3], true) }
-                    }
-                }
-            } else specificAddress.value = full
-        } catch (e: Exception) { specificAddress.value = full }
-    }
-
     fun loadSelectedCartItems() {
         isBuyNowMode = false
         viewModelScope.launch {
@@ -246,7 +291,81 @@ class CheckoutViewModel @Inject constructor(
     fun onPhoneChange(v: String) { phone.value = v }
     fun onPaymentMethodChange(v: String) { paymentMethod.value = v }
     fun onSpecificAddressChange(v: String) { specificAddress.value = v }
-    fun onProvinceSelected(p: Province) { selectedProvince.value = p; selectedDistrict.value = null; _districts.value = p.getDistrictList() }
-    fun onDistrictSelected(d: District) { selectedDistrict.value = d; selectedWard.value = null; _wards.value = d.getWardList() }
-    fun onWardSelected(w: Ward) { selectedWard.value = w }
+    private suspend fun loadUserProfile() {
+        auth.currentUser?.uid?.let { id ->
+            userRepository.getUserProfile(id)?.let { user ->
+                name.value = user.name
+                phone.value = user.phone
+                specificAddress.value = user.specificAddress
+
+                if (user.provinceId != 0) {
+                    selectedProvince.value = _provinces.value.find { it.provinceID == user.provinceId }
+
+                    val dRes = GHNRetrofit.api.getDistricts(user.provinceId)
+                    if (dRes.code == 200) {
+                        _districts.value = dRes.data!!
+                        selectedDistrict.value = dRes.data.find { it.districtID == user.districtId }
+                        val wRes = GHNRetrofit.api.getWards(user.districtId)
+                        if (wRes.code == 200) {
+                            _wards.value = wRes.data!!
+                            selectedWard.value = wRes.data.find { it.wardCode == user.wardCode }
+                            calculateShippingFee()
+                        }
+                    }
+                } else if (user.shippingAddress.isNotBlank()) {
+                }
+            }
+        }
+    }
+    private suspend fun parseAndSetAddress(fullAddress: String) {
+        var remainingAddress = fullAddress
+        val pList = _provinces.value
+
+        val matchedProvince = pList.find { fullAddress.contains(it.provinceName, ignoreCase = true) }
+
+        if (matchedProvince != null) {
+            selectedProvince.value = matchedProvince
+            remainingAddress = remainingAddress.replace(matchedProvince.provinceName, "", ignoreCase = true)
+
+            try {
+                val dRes = GHNRetrofit.api.getDistricts(matchedProvince.provinceID)
+                if (dRes.code == 200 && dRes.data != null) {
+                    _districts.value = dRes.data
+
+                    val matchedDistrict = dRes.data.find { fullAddress.contains(it.districtName, ignoreCase = true) }
+
+                    if (matchedDistrict != null) {
+                        selectedDistrict.value = matchedDistrict
+                        remainingAddress = remainingAddress.replace(matchedDistrict.districtName, "", ignoreCase = true)
+
+                        val wRes = GHNRetrofit.api.getWards(matchedDistrict.districtID)
+                        if (wRes.code == 200 && wRes.data != null) {
+                            _wards.value = wRes.data
+
+                            val matchedWard = wRes.data.find { fullAddress.contains(it.wardName, ignoreCase = true) }
+
+                            if (matchedWard != null) {
+                                selectedWard.value = matchedWard
+                                remainingAddress = remainingAddress.replace(matchedWard.wardName, "", ignoreCase = true)
+                                calculateShippingFee()
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        val cleanAddress = remainingAddress
+            .replace("Tỉnh", "", ignoreCase = true)
+            .replace("Thành phố", "", ignoreCase = true)
+            .replace("Huyện", "", ignoreCase = true)
+            .replace("Quận", "", ignoreCase = true)
+            .replace("Xã", "", ignoreCase = true)
+            .replace("Phường", "", ignoreCase = true)
+            .replace(",", " ")
+            .trim()
+            .replace(Regex("\\s+"), " ")
+        specificAddress.value = cleanAddress
+    }
 }

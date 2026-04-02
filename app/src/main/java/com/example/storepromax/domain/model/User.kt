@@ -11,6 +11,15 @@ data class User(
 
     val shippingAddress: String = "",
 
+    val specificAddress: String = "",
+    val provinceId: Int = 0,
+    val districtId: Int = 0,
+    val wardCode: String = "",
+
+    val provinceName: String = "",
+    val districtName: String = "",
+    val wardName: String = "",
+
     @field:JvmField
     val isLocked: Boolean = false,
 

@@ -34,9 +34,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 
-import com.example.storepromax.domain.model.Province
-import com.example.storepromax.domain.model.District
-import com.example.storepromax.domain.model.Ward
+import com.example.storepromax.domain.model.ProvinceGHN
+import com.example.storepromax.domain.model.DistrictGHN
+import com.example.storepromax.domain.model.WardGHN
 import com.example.storepromax.presentation.component.SearchableDropdown
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,38 +47,30 @@ fun EditProfileScreen(
 ) {
     val context = LocalContext.current
 
-    // --- 1. COLLECT STATE TỪ VIEWMODEL ---
-    // Vì ViewModel đã khai báo _currentUser là User?, nên biến 'user' ở đây sẽ tự hiểu là kiểu User
     val user by viewModel.currentUser.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val updateState by viewModel.updateState.collectAsState()
 
-    // Data Dropdown (Tỉnh/Huyện/Xã)
     val provinces by viewModel.provinces.collectAsState()
     val districts by viewModel.districts.collectAsState()
     val wards by viewModel.wards.collectAsState()
 
-    // Các mục đang được chọn (Tự động cập nhật nhờ logic parse trong ViewModel)
     val selectedProvince by viewModel.selectedProvince.collectAsState()
     val selectedDistrict by viewModel.selectedDistrict.collectAsState()
     val selectedWard by viewModel.selectedWard.collectAsState()
     val specificAddress by viewModel.specificAddress.collectAsState()
 
-    // --- 2. LOCAL STATE (CHO CÁC TRƯỜNG NHẬP LIỆU) ---
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
 
-    // 🔥 LOGIC TỰ ĐỘNG ĐIỀN: Khi user load xong, điền Tên và SĐT vào ô nhập
     LaunchedEffect(user) {
         user?.let {
-            name = it.name   // Lấy từ User model
-            phone = it.phone // Lấy từ User model
-            // Lưu ý: Địa chỉ không cần set ở đây vì ViewModel đã tự parse và đẩy vào các biến StateFlow ở trên
+            name = it.name
+            phone = it.phone
         }
     }
 
-    // Xử lý thông báo kết quả (Toast)
     LaunchedEffect(updateState) {
         if (updateState == "SUCCESS") {
             Toast.makeText(context, "Cập nhật hồ sơ thành công!", Toast.LENGTH_SHORT).show()
@@ -90,7 +82,6 @@ fun EditProfileScreen(
         }
     }
 
-    // Bộ chọn ảnh
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -99,7 +90,6 @@ fun EditProfileScreen(
         }
     }
 
-    // --- 3. GIAO DIỆN (UI) ---
     Scaffold(
         topBar = {
             TopAppBar(
@@ -116,7 +106,9 @@ fun EditProfileScreen(
     ) { padding ->
 
         if (isLoading) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            Box(Modifier
+                .fillMaxSize()
+                .padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         } else {
@@ -128,13 +120,14 @@ fun EditProfileScreen(
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // === PHẦN 1: AVATAR ===
                 Box(
                     modifier = Modifier
                         .size(120.dp)
                         .clickable {
                             photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                PickVisualMediaRequest(
+                                    ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
                             )
                         }
                 ) {
@@ -145,35 +138,54 @@ fun EditProfileScreen(
                             model = imageToShow,
                             contentDescription = "Avatar",
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
                         )
                     } else {
-                        Surface(shape = CircleShape, color = Color.LightGray, modifier = Modifier.fillMaxSize()) {
-                            Icon(Icons.Default.Person, contentDescription = null, tint = Color.White, modifier = Modifier.padding(20.dp))
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.LightGray,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                Icons.Default.Person,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.padding(20.dp)
+                            )
                         }
                     }
 
-                    Box(modifier = Modifier.align(Alignment.BottomEnd).background(Color.White, CircleShape).padding(6.dp)) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFF007AFF), modifier = Modifier.size(20.dp))
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .background(Color.White, CircleShape)
+                            .padding(6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.CameraAlt,
+                            contentDescription = null,
+                            tint = Color(0xFF007AFF),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Chạm để đổi ảnh", color = Color.Gray, fontSize = 12.sp)
-
-
-                // === PHẦN 2: THÔNG TIN CÁ NHÂN ===
                 Spacer(modifier = Modifier.height(24.dp))
-
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Tên hiển thị") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White)
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White
+                    )
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-
                 OutlinedTextField(
                     value = phone,
                     onValueChange = { phone = it },
@@ -181,49 +193,48 @@ fun EditProfileScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White)
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White
+                    )
                 )
-
-                // === PHẦN 3: ĐỊA CHỈ GIAO HÀNG (Dropdown) ===
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     "Địa chỉ nhận hàng",
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
-                    modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
+                    modifier = Modifier
+                        .align(Alignment.Start)
+                        .padding(bottom = 8.dp)
                 )
 
-                // 3.1 Tỉnh/Thành phố
-                SearchableDropdown<Province>(
+                SearchableDropdown<ProvinceGHN>(
                     label = "Tỉnh / Thành phố",
                     items = provinces,
-                    selectedItem = selectedProvince, // Tự động hiển thị Tỉnh cũ nhờ ViewModel
+                    selectedItem = selectedProvince,
                     onItemSelected = { viewModel.onProvinceSelected(it) },
-                    itemToString = { it.name }
+                    itemToString = { it.provinceName }
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 3.2 Quận/Huyện
-                SearchableDropdown<District>(
+                SearchableDropdown<DistrictGHN>(
                     label = "Quận / Huyện",
                     items = districts,
-                    selectedItem = selectedDistrict, // Tự động hiển thị Huyện cũ
+                    selectedItem = selectedDistrict,
                     onItemSelected = { viewModel.onDistrictSelected(it) },
-                    itemToString = { it.name }
+                    itemToString = { it.districtName }
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 3.3 Phường/Xã
-                SearchableDropdown<Ward>(
+                SearchableDropdown<WardGHN>(
                     label = "Phường / Xã",
                     items = wards,
-                    selectedItem = selectedWard, // Tự động hiển thị Xã cũ
+                    selectedItem = selectedWard,
                     onItemSelected = { viewModel.onWardSelected(it) },
-                    itemToString = { it.name }
+                    itemToString = { it.wardName }
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 3.4 Số nhà cụ thể
                 OutlinedTextField(
                     value = specificAddress,
                     onValueChange = { viewModel.onSpecificAddressChange(it) },
@@ -231,17 +242,19 @@ fun EditProfileScreen(
                     placeholder = { Text("Ví dụ: Số 12, Ngõ 5...") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White)
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White
+                    )
                 )
 
                 Spacer(modifier = Modifier.height(32.dp))
 
-                // === PHẦN 4: NÚT LƯU ===
                 Button(
-                    onClick = {
-                        viewModel.saveProfile(name, phone, selectedImageUri)
-                    },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    onClick = { viewModel.saveProfile(name, phone, selectedImageUri) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF))
                 ) {
@@ -249,7 +262,6 @@ fun EditProfileScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Lưu thay đổi", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
-
                 Spacer(modifier = Modifier.height(20.dp))
             }
         }

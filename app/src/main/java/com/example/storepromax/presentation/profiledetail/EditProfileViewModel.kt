@@ -1,20 +1,18 @@
 package com.example.storepromax.presentation.profile.edit
 
-import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.storepromax.domain.model.District
-import com.example.storepromax.domain.model.Province
-import com.example.storepromax.domain.model.Ward
-import com.example.storepromax.domain.model.User // ⚠️ Quan trọng: Import đúng Model User của bạn
+import com.example.storepromax.data.api.GHNRetrofit
+import com.example.storepromax.domain.model.DistrictGHN
+import com.example.storepromax.domain.model.ProvinceGHN
+import com.example.storepromax.domain.model.WardGHN
+import com.example.storepromax.domain.model.User
 import com.example.storepromax.domain.repository.UserRepository
-import com.example.storepromax.utils.AddressUtils
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -24,8 +22,7 @@ import javax.inject.Inject
 @HiltViewModel
 class EditProfileViewModel @Inject constructor(
     private val userRepository: UserRepository,
-    private val auth: FirebaseAuth,
-    @ApplicationContext private val context: Context
+    private val auth: FirebaseAuth
 ) : ViewModel() {
 
     private val _currentUser = MutableStateFlow<User?>(null)
@@ -37,23 +34,18 @@ class EditProfileViewModel @Inject constructor(
     private val _updateState = MutableStateFlow<String?>(null)
     val updateState = _updateState.asStateFlow()
 
-    private val _provinces = MutableStateFlow<List<Province>>(emptyList())
+    private val _provinces = MutableStateFlow<List<ProvinceGHN>>(emptyList())
     val provinces = _provinces.asStateFlow()
 
-    private val _districts = MutableStateFlow<List<District>>(emptyList())
+    private val _districts = MutableStateFlow<List<DistrictGHN>>(emptyList())
     val districts = _districts.asStateFlow()
 
-    private val _wards = MutableStateFlow<List<Ward>>(emptyList())
+    private val _wards = MutableStateFlow<List<WardGHN>>(emptyList())
     val wards = _wards.asStateFlow()
 
-    private val _selectedProvince = MutableStateFlow<Province?>(null)
-    val selectedProvince = _selectedProvince.asStateFlow()
-
-    private val _selectedDistrict = MutableStateFlow<District?>(null)
-    val selectedDistrict = _selectedDistrict.asStateFlow()
-
-    private val _selectedWard = MutableStateFlow<Ward?>(null)
-    val selectedWard = _selectedWard.asStateFlow()
+    val selectedProvince = MutableStateFlow<ProvinceGHN?>(null)
+    val selectedDistrict = MutableStateFlow<DistrictGHN?>(null)
+    val selectedWard = MutableStateFlow<WardGHN?>(null)
 
     val specificAddress = MutableStateFlow("")
 
@@ -63,73 +55,92 @@ class EditProfileViewModel @Inject constructor(
 
     private fun loadData() {
         viewModelScope.launch {
-            val provinceList = AddressUtils(context).getProvinces()
-            _provinces.value = provinceList
-
+            _isLoading.value = true
+            fetchProvincesFromGHN()
             val uid = auth.currentUser?.uid
             if (uid != null) {
                 userRepository.getUserDetails(uid).onSuccess { user ->
                     _currentUser.value = user
-
-                    if (user.shippingAddress.isNotBlank()) {
-                        parseAddressToDropdown(user.shippingAddress, provinceList)
+                    if (user.specificAddress.isNotBlank()) {
+                        specificAddress.value = user.specificAddress
+                    } else if (user.shippingAddress.isNotBlank()) {
+                        specificAddress.value = user.shippingAddress
                     }
-                }
-            }
-        }
-    }
-    private fun parseAddressToDropdown(fullAddress: String, provinceList: List<Province>) {
-        try { val parts = fullAddress.split(",").map { it.trim() }
-
-            if (parts.size >= 3) {
-                val pName = parts.last()
-                val dName = parts[parts.size - 2]
-                val wName = parts[parts.size - 3]
-
-                val specific = parts.take(parts.size - 3).joinToString(", ")
-                specificAddress.value = specific
-                val foundProvince = provinceList.find { it.name.equals(pName, ignoreCase = true) }
-                if (foundProvince != null) {
-                    _selectedProvince.value = foundProvince
-                    val districtList = foundProvince.getDistrictList()
-                    _districts.value = districtList
-                    val foundDistrict = districtList.find { it.name.equals(dName, ignoreCase = true) }
-                    if (foundDistrict != null) {
-                        _selectedDistrict.value = foundDistrict
-
-                        val wardList = foundDistrict.getWardList()
-                        _wards.value = wardList
-
-                        val foundWard = wardList.find { it.name.equals(wName, ignoreCase = true) }
-                        if (foundWard != null) {
-                            _selectedWard.value = foundWard
+                    if (user.provinceId != 0 && _provinces.value.isNotEmpty()) {
+                        selectedProvince.value =
+                            _provinces.value.find { it.provinceID == user.provinceId }
+                        try {
+                            val dRes = GHNRetrofit.api.getDistricts(user.provinceId)
+                            if (dRes.code == 200 && dRes.data != null) {
+                                _districts.value = dRes.data
+                                selectedDistrict.value =
+                                    dRes.data.find { it.districtID == user.districtId }
+                                val wRes = GHNRetrofit.api.getWards(user.districtId)
+                                if (wRes.code == 200 && wRes.data != null) {
+                                    _wards.value = wRes.data
+                                    selectedWard.value =
+                                        wRes.data.find { it.wardCode == user.wardCode }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     }
                 }
-            } else {
-                specificAddress.value = fullAddress
             }
-        } catch (e: Exception) {
-            specificAddress.value = fullAddress
+            _isLoading.value = false
         }
     }
 
-    fun onProvinceSelected(province: Province) {
-        _selectedProvince.value = province
-        _selectedDistrict.value = null
-        _selectedWard.value = null
-        _districts.value = province.getDistrictList()
+    private suspend fun fetchProvincesFromGHN() {
+        try {
+            val response = GHNRetrofit.api.getProvinces()
+            if (response.code == 200 && response.data != null) {
+                _provinces.value = response.data
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun onProvinceSelected(province: ProvinceGHN) {
+        selectedProvince.value = province
+        selectedDistrict.value = null
+        selectedWard.value = null
+        _districts.value = emptyList()
         _wards.value = emptyList()
+
+        viewModelScope.launch {
+            try {
+                val response = GHNRetrofit.api.getDistricts(province.provinceID)
+                if (response.code == 200 && response.data != null) {
+                    _districts.value = response.data
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
-    fun onDistrictSelected(district: District) {
-        _selectedDistrict.value = district
-        _selectedWard.value = null
-        _wards.value = district.getWardList()
+    fun onDistrictSelected(district: DistrictGHN) {
+        selectedDistrict.value = district
+        selectedWard.value = null
+        _wards.value = emptyList()
+
+        viewModelScope.launch {
+            try {
+                val response = GHNRetrofit.api.getWards(district.districtID)
+                if (response.code == 200 && response.data != null) {
+                    _wards.value = response.data
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
-    fun onWardSelected(ward: Ward) {
-        _selectedWard.value = ward
+    fun onWardSelected(ward: WardGHN) {
+        selectedWard.value = ward
     }
 
     fun onSpecificAddressChange(value: String) {
@@ -149,22 +160,33 @@ class EditProfileViewModel @Inject constructor(
                     avatarUrl = uploadResult.getOrNull() ?: avatarUrl
                 }
             }
+            val p = selectedProvince.value
+            val d = selectedDistrict.value
+            val w = selectedWard.value
+            val s = specificAddress.value.trim()
 
-            val p = _selectedProvince.value?.name ?: ""
-            val d = _selectedDistrict.value?.name ?: ""
-            val w = _selectedWard.value?.name ?: ""
-            val s = specificAddress.value
+            val pName = p?.provinceName ?: ""
+            val dName = d?.districtName ?: ""
+            val wName = w?.wardName ?: ""
 
-            val finalAddress = if (p.isNotBlank() && d.isNotBlank() && w.isNotBlank()) {
-                "$s, $w, $d, $p"
+            val finalAddress = if (pName.isNotBlank() && dName.isNotBlank() && wName.isNotBlank()) {
+                "$s, $wName, $dName, $pName"
             } else {
                 s
             }
+
             val updatedUser = currentUser.copy(
                 name = name,
                 phone = phone,
+                avatarUrl = avatarUrl,
                 shippingAddress = finalAddress,
-                avatarUrl = avatarUrl
+                specificAddress = s,
+                provinceId = p?.provinceID ?: 0,
+                districtId = d?.districtID ?: 0,
+                wardCode = w?.wardCode ?: "",
+                provinceName = pName,
+                districtName = dName,
+                wardName = wName
             )
 
             userRepository.updateUser(updatedUser).onSuccess {
@@ -173,33 +195,19 @@ class EditProfileViewModel @Inject constructor(
                     .setPhotoUri(if (avatarUrl.isNotBlank()) Uri.parse(avatarUrl) else null)
                     .build()
                 auth.currentUser?.updateProfile(profileUpdates)
-
                 try {
                     val db = FirebaseFirestore.getInstance()
                     val batch = db.batch()
                     val uid = auth.currentUser?.uid ?: ""
-                    val postsSnapshot = db.collection("posts")
-                        .whereEqualTo("userId", uid)
-                        .get()
-                        .await()
 
+                    val postsSnapshot = db.collection("posts").whereEqualTo("userId", uid).get().await()
                     for (doc in postsSnapshot.documents) {
-                        batch.update(doc.reference, mapOf(
-                            "userName" to name,
-                            "userAvatar" to avatarUrl
-                        ))
+                        batch.update(doc.reference, mapOf("userName" to name, "userAvatar" to avatarUrl))
                     }
 
-                    val commentsSnapshot = db.collectionGroup("comments")
-                        .whereEqualTo("userId", uid)
-                        .get()
-                        .await()
-
+                    val commentsSnapshot = db.collectionGroup("comments").whereEqualTo("userId", uid).get().await()
                     for (doc in commentsSnapshot.documents) {
-                        batch.update(doc.reference, mapOf(
-                            "userName" to name,
-                            "userAvatar" to avatarUrl
-                        ))
+                        batch.update(doc.reference, mapOf("userName" to name, "userAvatar" to avatarUrl))
                     }
                     batch.commit().await()
                 } catch (e: Exception) {
@@ -216,5 +224,7 @@ class EditProfileViewModel @Inject constructor(
         }
     }
 
-    fun resetState() { _updateState.value = null }
+    fun resetState() {
+        _updateState.value = null
+    }
 }

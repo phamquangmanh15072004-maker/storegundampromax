@@ -28,6 +28,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Voucher
+// 🌟 ĐÃ THÊM IMPORT GHN MODELS CHO BẠN
+import com.example.storepromax.domain.model.ProvinceGHN
+import com.example.storepromax.domain.model.DistrictGHN
+import com.example.storepromax.domain.model.WardGHN
 import com.example.storepromax.presentation.component.SearchableDropdown
 import java.text.DecimalFormat
 
@@ -145,11 +149,30 @@ fun CheckoutScreen(
                     Spacer(Modifier.height(8.dp))
                     SimpleTextField(phone, { viewModel.onPhoneChange(it) }, "Số điện thoại", Icons.Default.Phone)
                     Spacer(Modifier.height(8.dp))
-                    SearchableDropdown("Tỉnh thành", provinces, selectedProvince, { viewModel.onProvinceSelected(it) }, { it.name })
+
+                    SearchableDropdown(
+                        label = "Tỉnh thành",
+                        items = provinces,
+                        selectedItem = selectedProvince,
+                        onItemSelected = { viewModel.onProvinceSelected(it) },
+                        itemToString = { it.provinceName }
+                    )
                     Spacer(Modifier.height(8.dp))
-                    SearchableDropdown("Quận huyện", districts, selectedDistrict, { viewModel.onDistrictSelected(it) }, { it.name })
+                    SearchableDropdown(
+                        label = "Quận huyện",
+                        items = districts,
+                        selectedItem = selectedDistrict,
+                        onItemSelected = { viewModel.onDistrictSelected(it) },
+                        itemToString = { it.districtName }
+                    )
                     Spacer(Modifier.height(8.dp))
-                    SearchableDropdown("Phường xã", wards, selectedWard, { viewModel.onWardSelected(it) }, { it.name })
+                    SearchableDropdown(
+                        label = "Phường xã",
+                        items = wards,
+                        selectedItem = selectedWard,
+                        onItemSelected = { viewModel.onWardSelected(it) },
+                        itemToString = { it.wardName }
+                    )
                     Spacer(Modifier.height(8.dp))
                     SimpleTextField(specificAddress, { viewModel.onSpecificAddressChange(it) }, "Số nhà, tên đường", Icons.Default.LocationOn)
                 }
@@ -225,10 +248,6 @@ fun CheckoutScreen(
     }
 }
 
-// ==========================================
-// THÀNH PHẦN GIAO DIỆN CHUẨN E-COMMERCE
-// ==========================================
-
 @Composable
 fun VoucherSelectionRow(productDiscount: Long, freeshipAmount: Long, onClick: () -> Unit) {
     val formatter = DecimalFormat("#,###")
@@ -302,26 +321,25 @@ fun VoucherBottomSheet(
                     shape = RoundedCornerShape(8.dp), modifier = Modifier.height(56.dp)
                 ) { Text("ÁP DỤNG", fontWeight = FontWeight.Bold) }
             }
-
-            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                if (freeshipVouchers.isNotEmpty()) {
-                    item { Text("Miễn Phí Vận Chuyển", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
-                    items(freeshipVouchers) { v ->
-                        val isEligible = currentSubTotal >= v.minOrderValue && v.usedCount < v.usageLimit
-                        val isSelected = selectedFreeship?.code == v.code
-                        VoucherTicket(v, isSelected, isEligible, currentSubTotal, TealFreeship, Icons.Default.LocalShipping) { onSelectVoucher(v) }
+                    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        if (freeshipVouchers.isNotEmpty()) {
+                            item { Text("Miễn Phí Vận Chuyển", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
+                            items(freeshipVouchers) { v ->
+                                val isEligible = currentSubTotal >= v.minOrderValue && v.usedCount < v.usageLimit
+                                val isSelected = selectedFreeship?.code == v.code
+                                VoucherTicket(v, isSelected, isEligible, currentSubTotal, TealFreeship, Icons.Default.LocalShipping) { onSelectVoucher(v) }
+                            }
+                        }
+                        if (discountVouchers.isNotEmpty()) {
+                            item { Text("Giảm Giá Đơn Hàng", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
+                            items(discountVouchers) { v ->
+                                val isEligible = currentSubTotal >= v.minOrderValue && v.usedCount < v.usageLimit
+                                val isSelected = selectedDiscount?.code == v.code
+                                VoucherTicket(v, isSelected, isEligible, currentSubTotal, GunplaBlue, Icons.Default.ConfirmationNumber) { onSelectVoucher(v) }
+                            }
+                        }
+                        item { Spacer(modifier = Modifier.height(24.dp)) }
                     }
-                }
-                if (discountVouchers.isNotEmpty()) {
-                    item { Text("Giảm Giá Đơn Hàng", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
-                    items(discountVouchers) { v ->
-                        val isEligible = currentSubTotal >= v.minOrderValue && v.usedCount < v.usageLimit
-                        val isSelected = selectedDiscount?.code == v.code
-                        VoucherTicket(v, isSelected, isEligible, currentSubTotal, GunplaBlue, Icons.Default.ConfirmationNumber) { onSelectVoucher(v) }
-                    }
-                }
-                item { Spacer(modifier = Modifier.height(24.dp)) }
-            }
         }
     }
 }
