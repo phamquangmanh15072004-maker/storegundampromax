@@ -19,5 +19,8 @@ data class Order(
 
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-    val cancelReason: String = ""
+    val cancelReason: String = "",
+    val shippingMethod: String = "STANDARD",
+    val discountCode: String? = null,
+    val freeshipCode: String? = null
 )

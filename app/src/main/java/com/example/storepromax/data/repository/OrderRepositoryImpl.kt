@@ -35,6 +35,7 @@ class OrderRepositoryImpl @Inject constructor(
             }
         awaitClose { subscription.remove() }
     }
+
     override suspend fun createOrder(
         order: Order,
         discountCode: String?,
@@ -109,9 +110,9 @@ class OrderRepositoryImpl @Inject constructor(
                 userDiscountRef?.let { transaction.update(it, "status", "USED") }
                 userFreeshipRef?.let { transaction.update(it, "status", "USED") }
 
-                val orderRef = firestore.collection("orders").document()
-                newOrderId = orderRef.id
-                transaction.set(orderRef, order.copy(id = newOrderId))
+                val orderRef = firestore.collection("orders").document(order.id)
+                newOrderId = order.id
+                transaction.set(orderRef, order)
 
             }.await()
 
@@ -121,24 +122,47 @@ class OrderRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun cancelOrder(orderId: String,reason:String) {
+    override suspend fun cancelOrder(orderId: String, reason: String) {
         try {
+            val orderRef = firestore.collection("orders").document(orderId)
+            val orderSnapshot = orderRef.get().await()
+            val order = orderSnapshot.toObject(Order::class.java) ?: return
+            var globalDiscountRef: com.google.firebase.firestore.DocumentReference? = null
+            var userDiscountRef: com.google.firebase.firestore.DocumentReference? = null
+            var globalFreeshipRef: com.google.firebase.firestore.DocumentReference? = null
+            var userFreeshipRef: com.google.firebase.firestore.DocumentReference? = null
+            order.discountCode?.let { code ->
+                globalDiscountRef = firestore.collection("vouchers").whereEqualTo("code", code).get().await().documents.firstOrNull()?.reference
+                userDiscountRef = firestore.collection("user_vouchers")
+                    .whereEqualTo("userId", order.userId)
+                    .whereEqualTo("voucher.code", code)
+                    .get().await().documents.firstOrNull()?.reference
+            }
+            order.freeshipCode?.let { code ->
+                globalFreeshipRef = firestore.collection("vouchers").whereEqualTo("code", code).get().await().documents.firstOrNull()?.reference
+                userFreeshipRef = firestore.collection("user_vouchers")
+                    .whereEqualTo("userId", order.userId)
+                    .whereEqualTo("voucher.code", code)
+                    .get().await().documents.firstOrNull()?.reference
+            }
             firestore.runTransaction { transaction ->
-                val orderRef = firestore.collection("orders").document(orderId)
-                val snapshot = transaction.get(orderRef)
-                val order = snapshot.toObject(Order::class.java)
-
-                if (order != null && order.status != "CANCELLED") {
+                val currentOrderSnap = transaction.get(orderRef)
+                val currentOrder = currentOrderSnap.toObject(Order::class.java)
+                if (currentOrder != null && currentOrder.status != "CANCELLED") {
                     transaction.update(orderRef, "status", "CANCELLED")
                     transaction.update(orderRef, "cancelReason", reason)
-
-                    for (item in order.items) {
+                    for (item in currentOrder.items) {
                         val productRef = firestore.collection("products").document(item.product.id)
                         transaction.update(productRef, "stock", FieldValue.increment(item.quantity.toLong()))
                         transaction.update(productRef, "sold", FieldValue.increment(-item.quantity.toLong()))
                     }
+                    globalDiscountRef?.let { transaction.update(it, "usedCount", FieldValue.increment(-1)) }
+                    userDiscountRef?.let { transaction.update(it, "status", "AVAILABLE") }
+                    globalFreeshipRef?.let { transaction.update(it, "usedCount", FieldValue.increment(-1)) }
+                    userFreeshipRef?.let { transaction.update(it, "status", "AVAILABLE") }
                 }
             }.await()
+
         } catch (e: Exception) {
             e.printStackTrace()
         }

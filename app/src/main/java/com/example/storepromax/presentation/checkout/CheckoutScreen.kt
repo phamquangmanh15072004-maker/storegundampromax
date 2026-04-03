@@ -7,7 +7,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -20,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,11 +31,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Voucher
-// 🌟 ĐÃ THÊM IMPORT GHN MODELS CHO BẠN
 import com.example.storepromax.domain.model.ProvinceGHN
 import com.example.storepromax.domain.model.DistrictGHN
 import com.example.storepromax.domain.model.WardGHN
 import com.example.storepromax.presentation.component.SearchableDropdown
+import kotlinx.coroutines.delay
+import java.net.URLEncoder
 import java.text.DecimalFormat
 
 val GunplaBlue = Color(0xFF0D47A1)
@@ -41,6 +45,7 @@ val AlertRed = Color(0xFFFF3B30)
 val SuccessGreen = Color(0xFF00C853)
 val TealFreeship = Color(0xFF00BFA5)
 
+data class PaymentPopupData(val url: String, val bin: String, val accNo: String, val amount: Long, val description: String, val orderId: String)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CheckoutScreen(
@@ -68,25 +73,36 @@ fun CheckoutScreen(
     val wards by viewModel.wards.collectAsState()
     val selectedWard by viewModel.selectedWard.collectAsState()
     val specificAddress by viewModel.specificAddress.collectAsState()
+
     val paymentMethod by viewModel.paymentMethod.collectAsState()
+    val shippingMethod by viewModel.shippingMethod.collectAsState()
 
     val availableVouchers by viewModel.availableVouchers.collectAsState()
     val selectedDiscountVoucher by viewModel.selectedDiscountVoucher.collectAsState()
     val selectedFreeshipVoucher by viewModel.selectedFreeshipVoucher.collectAsState()
 
     var showVoucherSheet by remember { mutableStateOf(false) }
-    var showQRDialog by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
+    var showTransferSuccessDialog by remember { mutableStateOf(false) }
+    var paymentPopupData by remember { mutableStateOf<PaymentPopupData?>(null) }
+
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(productId, quantity, discountCode, freeshipCode) {
         if (productId != null && quantity != null) viewModel.loadSingleProductForCheckout(productId, quantity)
         else viewModel.loadSelectedCartItems()
         viewModel.setInitialVouchers(discountCode, freeshipCode)
     }
+
     LaunchedEffect(Unit) {
         viewModel.uiEvent.collect { message ->
-            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            if (message == "PAYMENT_SUCCESS") {
+                paymentPopupData = null
+                showTransferSuccessDialog = true
+            } else {
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -129,7 +145,14 @@ fun CheckoutScreen(
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Button(
-                        onClick = { if (paymentMethod == "BANKING") showQRDialog = true else viewModel.submitOrder { showSuccessDialog = true } },
+                        onClick = {
+                            viewModel.submitOrder(
+                                onSuccess = { showSuccessDialog = true },
+                                onShowPaymentPopup = { url, bin, accNo, description, orderId ->
+                                    paymentPopupData = PaymentPopupData(url, bin, accNo, finalTotal, description, orderId)
+                                }
+                            )
+                        },
                         enabled = !isProcessing && selectedItems.isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue),
                         shape = RoundedCornerShape(8.dp),
@@ -193,10 +216,28 @@ fun CheckoutScreen(
             }
 
             item {
-                SectionCard("Phương thức thanh toán") {
-                    PaymentOptionItem("Thanh toán tiền mặt (COD)", Icons.Default.Money, paymentMethod == "COD") { viewModel.onPaymentMethodChange("COD") }
+                SectionCard("Gói giao hàng") {
+                    PaymentOptionItem(
+                        title = "Tiêu chuẩn (Dự kiến 3-5 ngày)",
+                        icon = Icons.Default.LocalShipping,
+                        selected = shippingMethod == "STANDARD"
+                    ) { viewModel.onShippingMethodChange("STANDARD") }
+
                     Spacer(Modifier.height(8.dp))
-                    PaymentOptionItem("Chuyển khoản (QR)", Icons.Default.QrCode, paymentMethod == "BANKING") { viewModel.onPaymentMethodChange("BANKING") }
+
+                    PaymentOptionItem(
+                        title = "Hỏa tốc (Dự kiến 1-2 ngày)",
+                        icon = Icons.Default.FlashOn,
+                        selected = shippingMethod == "EXPRESS"
+                    ) { viewModel.onShippingMethodChange("EXPRESS") }
+                }
+            }
+
+            item {
+                SectionCard("Phương thức thanh toán") {
+                    PaymentOptionItem("Thanh toán khi nhận hàng (COD)", Icons.Default.Money, paymentMethod == "COD") { viewModel.onPaymentMethodChange("COD") }
+                    Spacer(Modifier.height(8.dp))
+                    PaymentOptionItem("Chuyển khoản an toàn qua PayOS", Icons.Default.QrCode, paymentMethod == "BANKING") { viewModel.onPaymentMethodChange("BANKING") }
                 }
             }
 
@@ -217,8 +258,8 @@ fun CheckoutScreen(
                 SectionCard("Chi tiết thanh toán") {
                     BillRow("Tiền hàng", subTotal)
                     BillRow("Phí vận chuyển", shipFee)
-                    if (shipDisc > 0) BillRow("Miễn Phí Vận Chuyển", -shipDisc, color = TealFreeship)
-                    if (prodDisc > 0) BillRow("Voucher Giảm Giá", -prodDisc, color = SuccessGreen)
+                    if (shipDisc > 0) BillRow("Miễn phí vận chuyển", -shipDisc, color = TealFreeship)
+                    if (prodDisc > 0) BillRow("Voucher giảm giá", -prodDisc, color = SuccessGreen)
                     HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Color(0xFFEEEEEE))
                     BillRow("Tổng thanh toán", finalTotal, isTotal = true)
                 }
@@ -239,15 +280,134 @@ fun CheckoutScreen(
         )
     }
 
-    if (showQRDialog) QRPaymentDialogLight(finalTotal, { showQRDialog = false }) {
-        showQRDialog = false; viewModel.submitOrder { showSuccessDialog = true }
+    if (showSuccessDialog) {
+        OrderSuccessDialogLight {
+            showSuccessDialog = false
+            navController.navigate("home_screen") { popUpTo("home_screen") { inclusive = true } }
+        }
     }
+    if (paymentPopupData != null) {
+        HybridQRPaymentDialog(
+            data = paymentPopupData!!,
+            onDismiss = {
+                paymentPopupData = null
+                navController.navigate("home_screen") { popUpTo("home_screen") { inclusive = true } }
+            },
+            onCancelOrder = {
+                viewModel.cancelOrderFromPopup(paymentPopupData!!.orderId)
 
-    if (showSuccessDialog) OrderSuccessDialogLight {
-        showSuccessDialog = false; navController.navigate("home_screen") { popUpTo("home_screen") { inclusive = true } }
+                paymentPopupData = null
+                navController.navigate("home_screen") { popUpTo("home_screen") { inclusive = true } }
+            },
+            onOpenWeb = { url ->
+                try {
+                    uriHandler.openUri(url)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Không thể mở ứng dụng", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+    if (showTransferSuccessDialog) {
+        TransferSuccessDialog {
+            showTransferSuccessDialog = false
+            navController.navigate("home_screen") { popUpTo("home_screen") { inclusive = true } }
+        }
     }
 }
 
+@Composable
+fun HybridQRPaymentDialog(
+    data: PaymentPopupData,
+    onDismiss: () -> Unit,
+    onCancelOrder: () -> Unit,
+    onOpenWeb: (String) -> Unit
+) {
+    val context = LocalContext.current
+
+    var timeLeft by remember { mutableIntStateOf(5 * 60) }
+
+    LaunchedEffect(Unit) {
+        while (timeLeft > 0) {
+            delay(1000L)
+            timeLeft--
+        }
+        Toast.makeText(context, "Đã hết thời gian thanh toán!", Toast.LENGTH_SHORT).show()
+        onCancelOrder()
+    }
+    val minutes = timeLeft / 60
+    val seconds = timeLeft % 60
+    val timeString = String.format("%02d:%02d", minutes, seconds)
+
+    val description = URLEncoder.encode(data.description, "UTF-8")
+    val accountName = URLEncoder.encode("Gunpla Store", "UTF-8")
+    val qrUrl = "https://img.vietqr.io/image/${data.bin}-${data.accNo}-compact2.png?amount=${data.amount}&addInfo=$description&accountName=$accountName"
+
+    AlertDialog(
+        onDismissRequest = {},
+        containerColor = Color.White,
+        title = { Text("Thanh toán đơn hàng", fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Mã QR sẽ hết hạn sau:", fontSize = 14.sp, color = Color.Gray)
+                Text(timeString, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AlertRed)
+
+                Spacer(Modifier.height(8.dp))
+
+                Text("Cách 1: Quét mã bằng máy khác", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GunplaBlue)
+                Card(shape = RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.padding(vertical = 12.dp)) {
+                    AsyncImage(model = qrUrl, contentDescription = "QR Code", modifier = Modifier.size(200.dp).padding(8.dp))
+                }
+                Text("Số tiền: ₫${DecimalFormat("#,###").format(data.amount)}", color = AlertRed, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = Color(0xFFEEEEEE))
+                Spacer(Modifier.height(16.dp))
+
+                Text("Cách 2: Thanh toán trên máy này", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GunplaBlue)
+                Text("(Tự động mở App ngân hàng của bạn)", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 4.dp))
+
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { onOpenWeb(data.url) },
+                    colors = ButtonDefaults.buttonColors(GunplaBlue),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Mở App Ngân Hàng", fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    Toast.makeText(context, "Đã ghi nhận. Đơn hàng sẽ cập nhật khi tiền vào tài khoản!", Toast.LENGTH_LONG).show()
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(SuccessGreen),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Tôi đã chuyển khoản xong", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = { onCancelOrder() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Đổi ý / Hủy đơn hàng này", color = AlertRed, fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
 @Composable
 fun VoucherSelectionRow(productDiscount: Long, freeshipAmount: Long, onClick: () -> Unit) {
     val formatter = DecimalFormat("#,###")
@@ -321,25 +481,25 @@ fun VoucherBottomSheet(
                     shape = RoundedCornerShape(8.dp), modifier = Modifier.height(56.dp)
                 ) { Text("ÁP DỤNG", fontWeight = FontWeight.Bold) }
             }
-                    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        if (freeshipVouchers.isNotEmpty()) {
-                            item { Text("Miễn Phí Vận Chuyển", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
-                            items(freeshipVouchers) { v ->
-                                val isEligible = currentSubTotal >= v.minOrderValue && v.usedCount < v.usageLimit
-                                val isSelected = selectedFreeship?.code == v.code
-                                VoucherTicket(v, isSelected, isEligible, currentSubTotal, TealFreeship, Icons.Default.LocalShipping) { onSelectVoucher(v) }
-                            }
-                        }
-                        if (discountVouchers.isNotEmpty()) {
-                            item { Text("Giảm Giá Đơn Hàng", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
-                            items(discountVouchers) { v ->
-                                val isEligible = currentSubTotal >= v.minOrderValue && v.usedCount < v.usageLimit
-                                val isSelected = selectedDiscount?.code == v.code
-                                VoucherTicket(v, isSelected, isEligible, currentSubTotal, GunplaBlue, Icons.Default.ConfirmationNumber) { onSelectVoucher(v) }
-                            }
-                        }
-                        item { Spacer(modifier = Modifier.height(24.dp)) }
+            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (freeshipVouchers.isNotEmpty()) {
+                    item { Text("Miễn Phí Vận Chuyển", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
+                    items(freeshipVouchers) { v ->
+                        val isEligible = currentSubTotal >= v.minOrderValue && v.usedCount < v.usageLimit
+                        val isSelected = selectedFreeship?.code == v.code
+                        VoucherTicket(v, isSelected, isEligible, currentSubTotal, TealFreeship, Icons.Default.LocalShipping) { onSelectVoucher(v) }
                     }
+                }
+                if (discountVouchers.isNotEmpty()) {
+                    item { Text("Giảm Giá Đơn Hàng", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
+                    items(discountVouchers) { v ->
+                        val isEligible = currentSubTotal >= v.minOrderValue && v.usedCount < v.usageLimit
+                        val isSelected = selectedDiscount?.code == v.code
+                        VoucherTicket(v, isSelected, isEligible, currentSubTotal, GunplaBlue, Icons.Default.ConfirmationNumber) { onSelectVoucher(v) }
+                    }
+                }
+                item { Spacer(modifier = Modifier.height(24.dp)) }
+            }
         }
     }
 }
@@ -425,29 +585,18 @@ fun OrderSuccessDialogLight(onGoHome: () -> Unit) {
     AlertDialog(
         onDismissRequest = {}, containerColor = Color.White,
         icon = { Icon(Icons.Default.CheckCircle, null, tint = SuccessGreen, modifier = Modifier.size(56.dp)) },
-        title = { Text("Đặt hàng thành công!", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
-        text = { Text("Cảm ơn bạn đã mua sắm. Đơn hàng đang được xử lý nhanh chóng.", textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+        title = { Text("Đặt hàng thành công!", fontWeight = FontWeight.Bold, fontSize = 20.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+        text = { Text("Cảm ơn bạn đã mua sắm. Đơn hàng sẽ được thanh toán bằng tiền mặt khi giao hàng.", textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
         confirmButton = { Button(onClick = onGoHome, colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue), modifier = Modifier.fillMaxWidth()) { Text("Về trang chủ", fontWeight = FontWeight.Bold) } }
     )
 }
-
 @Composable
-fun QRPaymentDialogLight(amount: Long, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    val qrUrl = "https://img.vietqr.io/image/MB-0375520600-compact.png?amount=$amount&addInfo=Thanh toan don hang"
+fun TransferSuccessDialog(onGoHome: () -> Unit) {
     AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Color.White,
-        title = { Text("Quét mã thanh toán", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
-        text = {
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Card(shape = RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(4.dp), colors = CardDefaults.cardColors(Color.White)) {
-                    AsyncImage(model = qrUrl, contentDescription = "QR", modifier = Modifier.size(220.dp).padding(8.dp))
-                }
-                Spacer(Modifier.height(16.dp))
-                Text("Số tiền cần thanh toán:", fontSize = 14.sp, color = Color.Gray)
-                Text("₫${DecimalFormat("#,###").format(amount)}", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = AlertRed)
-            }
-        },
-        confirmButton = { Button(onClick = onConfirm, colors = ButtonDefaults.buttonColors(GunplaBlue), modifier = Modifier.fillMaxWidth()) { Text("Đã chuyển khoản xong", fontWeight = FontWeight.Bold) } },
-        dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Hủy bỏ", color = Color.Gray) } }
+        onDismissRequest = {}, containerColor = Color.White,
+        icon = { Icon(Icons.Default.CheckCircle, null, tint = SuccessGreen, modifier = Modifier.size(56.dp)) },
+        title = { Text("Thanh toán thành công!", fontWeight = FontWeight.Bold, fontSize = 20.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+        text = { Text("Hệ thống đã nhận được tiền chuyển khoản. Đơn hàng của bạn đang được chuẩn bị và sẽ sớm được giao!", textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+        confirmButton = { Button(onClick = onGoHome, colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue), modifier = Modifier.fillMaxWidth()) { Text("Về trang chủ", fontWeight = FontWeight.Bold) } }
     )
 }

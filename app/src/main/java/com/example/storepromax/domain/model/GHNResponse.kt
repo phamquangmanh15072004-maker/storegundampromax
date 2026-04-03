@@ -24,7 +24,7 @@ data class WardGHN(
     @SerializedName("WardName") val wardName: String
 )
 data class GHNFeeRequest(
-    val service_type_id: Int = 2,
+    val service_type_id: Int,
     val to_district_id: Int,
     val to_ward_code: String,
     val weight: Int,

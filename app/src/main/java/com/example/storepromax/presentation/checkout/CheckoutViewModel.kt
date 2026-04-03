@@ -4,11 +4,13 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.storepromax.admin.utils.NotificationHelper
+import com.example.storepromax.data.api.BackendRetrofit
 import com.example.storepromax.data.api.GHNRetrofit
 import com.example.storepromax.domain.model.CartItem
 import com.example.storepromax.domain.model.DistrictGHN
 import com.example.storepromax.domain.model.GHNFeeRequest
 import com.example.storepromax.domain.model.Order
+import com.example.storepromax.domain.model.PaymentRequest
 import com.example.storepromax.domain.model.ProvinceGHN
 import com.example.storepromax.domain.model.Voucher
 import com.example.storepromax.domain.model.WardGHN
@@ -20,6 +22,7 @@ import com.example.storepromax.domain.repository.VoucherRepository
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -78,7 +81,7 @@ class CheckoutViewModel @Inject constructor(
     ) { sub, ship, prodDisc, shipDisc ->
         ((sub - prodDisc) + (ship - shipDisc)).coerceAtLeast(0L)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
-
+    private var paymentListenerJob: Job? = null
     val name = MutableStateFlow("")
     val phone = MutableStateFlow("")
     val specificAddress = MutableStateFlow("")
@@ -101,6 +104,13 @@ class CheckoutViewModel @Inject constructor(
     private val _uiEvent = Channel<String>()
     val uiEvent = _uiEvent.receiveAsFlow()
 
+    val shippingMethod = MutableStateFlow("STANDARD")
+
+    fun onShippingMethodChange(method: String) {
+        shippingMethod.value = method
+        calculateShippingFee()
+    }
+
     init {
         viewModelScope.launch {
             refreshVouchers()
@@ -114,7 +124,18 @@ class CheckoutViewModel @Inject constructor(
             }
         }
     }
-
+    private fun listenToOrderPaymentStatus(orderId: String, totalAmount: Double) {
+        paymentListenerJob?.cancel()
+        paymentListenerJob = viewModelScope.launch {
+            orderRepository.getOrderById(orderId).collect { order ->
+                if (order != null && order.paymentStatus == "PAID") {
+                    _uiEvent.send("PAYMENT_SUCCESS")
+                    NotificationHelper.sendOrderNotificationToAdmin(context, orderId, totalAmount)
+                    paymentListenerJob?.cancel()
+                }
+            }
+        }
+    }
     private suspend fun fetchProvincesFromGHN() {
         try {
             val response = GHNRetrofit.api.getProvinces()
@@ -123,7 +144,13 @@ class CheckoutViewModel @Inject constructor(
             }
         } catch (e: Exception) { e.printStackTrace() }
     }
-
+    fun cancelOrderFromPopup(orderId: String) {
+        viewModelScope.launch {
+            paymentListenerJob?.cancel()
+            orderRepository.cancelOrder(orderId, "Khách hàng đổi ý / Quên nhập Voucher")
+            _uiEvent.send("Đã hủy đơn hàng để đặt lại!")
+        }
+    }
     fun onProvinceSelected(p: ProvinceGHN) {
         selectedProvince.value = p
         selectedDistrict.value = null
@@ -165,30 +192,31 @@ class CheckoutViewModel @Inject constructor(
         val dId = selectedDistrict.value?.districtID ?: return
         val wCode = selectedWard.value?.wardCode ?: return
 
-        val totalWeight = 500
-        val orderValue = totalPrice.value
-
         viewModelScope.launch {
             try {
-                _shippingFee.value = 0L
-
                 val request = GHNFeeRequest(
                     to_district_id = dId,
                     to_ward_code = wCode,
-                    weight = totalWeight,
-                    insurance_value = orderValue
+                    weight = 500,
+                    service_type_id = 2,
+                    insurance_value = totalPrice.value
                 )
-
                 val response = GHNRetrofit.api.calculateFee(MY_SHOP_ID, request)
 
-                if (response.code == 200 && response.data != null) {
-                    _shippingFee.value = response.data.total
+                val baseFee = if (response.code == 200 && response.data != null) {
+                    response.data.total
                 } else {
-                    _shippingFee.value = 30000L
+                    30000L
+                }
+
+                if (shippingMethod.value == "EXPRESS") {
+                    _shippingFee.value = baseFee + 15000L
+                } else {
+                    _shippingFee.value = baseFee
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                _shippingFee.value = 30000L
+                _shippingFee.value = if (shippingMethod.value == "EXPRESS") 45000L else 30000L
             }
         }
     }
@@ -199,6 +227,7 @@ class CheckoutViewModel @Inject constructor(
         val w = selectedWard.value?.wardName ?: ""
         return if (p.isNotBlank()) "${specificAddress.value}, $w, $d, $p" else specificAddress.value
     }
+
     fun refreshVouchers() {
         val userId = auth.currentUser?.uid ?: return
         viewModelScope.launch {
@@ -241,9 +270,9 @@ class CheckoutViewModel @Inject constructor(
         }
     }
 
-    fun submitOrder(onSuccess: () -> Unit) {
-        val userId = auth.currentUser?.uid ?: ""
+    fun submitOrder(onSuccess: () -> Unit, onShowPaymentPopup: (String, String, String, String, String) -> Unit) {        val userId = auth.currentUser?.uid ?: ""
         val address = getFullAddress()
+
         if (name.value.isBlank() || phone.value.isBlank() || selectedProvince.value == null || selectedDistrict.value == null || selectedWard.value == null || specificAddress.value.isBlank()) {
             viewModelScope.launch { _uiEvent.send("Vui lòng chọn đầy đủ địa chỉ giao hàng!") }
             return
@@ -252,21 +281,57 @@ class CheckoutViewModel @Inject constructor(
         viewModelScope.launch {
             _isProcessing.value = true
             val finalTotal = finalTotalPrice.value
-
-            val newOrder = Order(
-                userId = userId, items = _displayItems.value, totalPrice = finalTotal,
-                receiverName = name.value, receiverPhone = phone.value, address = address,
-                status = "PENDING", paymentMethod = paymentMethod.value,
-                paymentStatus = if (paymentMethod.value == "BANKING") "PAID" else "UNPAID",
-                createdAt = System.currentTimeMillis()
-            )
+            val orderId = System.currentTimeMillis().toString().takeLast(9)
             val dCode = _selectedDiscountVoucher.value?.code?.takeIf { it.isNotBlank() }
             val fCode = _selectedFreeshipVoucher.value?.code?.takeIf { it.isNotBlank() }
+            val newOrder = Order(
+                id = orderId,
+                userId = userId,
+                items = _displayItems.value,
+                totalPrice = finalTotal,
+                receiverName = name.value,
+                receiverPhone = phone.value,
+                address = address,
+                paymentMethod = paymentMethod.value,
+                shippingMethod = shippingMethod.value,
+                paymentStatus = "UNPAID",
+                status = "PENDING",
+                createdAt = System.currentTimeMillis(),
+                discountCode = dCode,
+                freeshipCode = fCode
+            )
 
-            orderRepository.createOrder(newOrder, dCode, fCode).onSuccess { orderId ->
-                if (!isBuyNowMode) _displayItems.value.forEach { cartRepository.removeFromCart(it.product.id) }
-                NotificationHelper.sendOrderNotificationToAdmin(context, orderId, finalTotal.toDouble())
-                onSuccess()
+            orderRepository.createOrder(newOrder, dCode, fCode).onSuccess {
+                if (!isBuyNowMode) {
+                    _displayItems.value.forEach { cartRepository.removeFromCart(it.product.id) }
+                }
+                if (paymentMethod.value == "BANKING") {
+                    try {
+                        val response = BackendRetrofit.api.createPaymentLink(
+                            PaymentRequest(orderId, finalTotal, "Thanh toan don $orderId")
+                        )
+                        if (response.isSuccessful && response.body()?.success == true) {
+                            val body = response.body()!!
+                            onShowPaymentPopup(
+                                body.checkoutUrl ?: "",
+                                body.bin ?: "",
+                                body.accountNumber ?: "",
+                                body.description ?: "",
+                                orderId
+                            )
+                            listenToOrderPaymentStatus(orderId, finalTotal.toDouble())
+                        } else {
+                            val errorMsg = response.errorBody()?.string() ?: response.message()
+                            _uiEvent.send("Server PayOS từ chối: $errorMsg")
+                        }
+                    }catch (e: Exception){
+                        _uiEvent.send("Lỗi kết nối Server thanh toán: ${e.message}")
+                    }
+                } else {
+                    NotificationHelper.sendOrderNotificationToAdmin(context, orderId, finalTotal.toDouble())
+                    onSuccess()
+                }
+
             }.onFailure { error ->
                 _uiEvent.send(error.message ?: "Có lỗi xảy ra, vui lòng thử lại!")
             }
@@ -291,6 +356,7 @@ class CheckoutViewModel @Inject constructor(
     fun onPhoneChange(v: String) { phone.value = v }
     fun onPaymentMethodChange(v: String) { paymentMethod.value = v }
     fun onSpecificAddressChange(v: String) { specificAddress.value = v }
+
     private suspend fun loadUserProfile() {
         auth.currentUser?.uid?.let { id ->
             userRepository.getUserProfile(id)?.let { user ->
@@ -312,60 +378,8 @@ class CheckoutViewModel @Inject constructor(
                             calculateShippingFee()
                         }
                     }
-                } else if (user.shippingAddress.isNotBlank()) {
                 }
             }
         }
-    }
-    private suspend fun parseAndSetAddress(fullAddress: String) {
-        var remainingAddress = fullAddress
-        val pList = _provinces.value
-
-        val matchedProvince = pList.find { fullAddress.contains(it.provinceName, ignoreCase = true) }
-
-        if (matchedProvince != null) {
-            selectedProvince.value = matchedProvince
-            remainingAddress = remainingAddress.replace(matchedProvince.provinceName, "", ignoreCase = true)
-
-            try {
-                val dRes = GHNRetrofit.api.getDistricts(matchedProvince.provinceID)
-                if (dRes.code == 200 && dRes.data != null) {
-                    _districts.value = dRes.data
-
-                    val matchedDistrict = dRes.data.find { fullAddress.contains(it.districtName, ignoreCase = true) }
-
-                    if (matchedDistrict != null) {
-                        selectedDistrict.value = matchedDistrict
-                        remainingAddress = remainingAddress.replace(matchedDistrict.districtName, "", ignoreCase = true)
-
-                        val wRes = GHNRetrofit.api.getWards(matchedDistrict.districtID)
-                        if (wRes.code == 200 && wRes.data != null) {
-                            _wards.value = wRes.data
-
-                            val matchedWard = wRes.data.find { fullAddress.contains(it.wardName, ignoreCase = true) }
-
-                            if (matchedWard != null) {
-                                selectedWard.value = matchedWard
-                                remainingAddress = remainingAddress.replace(matchedWard.wardName, "", ignoreCase = true)
-                                calculateShippingFee()
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        val cleanAddress = remainingAddress
-            .replace("Tỉnh", "", ignoreCase = true)
-            .replace("Thành phố", "", ignoreCase = true)
-            .replace("Huyện", "", ignoreCase = true)
-            .replace("Quận", "", ignoreCase = true)
-            .replace("Xã", "", ignoreCase = true)
-            .replace("Phường", "", ignoreCase = true)
-            .replace(",", " ")
-            .trim()
-            .replace(Regex("\\s+"), " ")
-        specificAddress.value = cleanAddress
     }
 }
