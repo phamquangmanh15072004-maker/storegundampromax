@@ -32,9 +32,19 @@ class MyVoucherViewModel @Inject constructor(
     fun fetchMyVouchers() {
         viewModelScope.launch {
             _isLoading.value = true
-            voucherRepository.getUserVouchers(currentUserId).onSuccess { list ->
-                // Sắp xếp: Mã mới lưu lên đầu
-                _myVouchers.value = list.sortedByDescending { it.claimedAt }
+            voucherRepository.getUserVouchers(currentUserId).onSuccess { mySavedVouchers ->
+                voucherRepository.getAllVouchersForAdmin().onSuccess { allSystemVouchers ->
+                    val systemVoucherMap = allSystemVouchers.associateBy { it.id }
+                    val synchronizedVouchers = mySavedVouchers.mapNotNull { savedItem ->
+                        val latestVoucher = systemVoucherMap[savedItem.voucherId]
+                        if (latestVoucher == null) {
+                            null
+                        } else {
+                            savedItem.copy(voucher = latestVoucher)
+                        }
+                    }
+                    _myVouchers.value = synchronizedVouchers.sortedByDescending { it.claimedAt }
+                }
             }
             _isLoading.value = false
         }

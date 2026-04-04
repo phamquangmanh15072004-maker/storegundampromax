@@ -31,9 +31,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Voucher
-import com.example.storepromax.domain.model.ProvinceGHN
-import com.example.storepromax.domain.model.DistrictGHN
-import com.example.storepromax.domain.model.WardGHN
 import com.example.storepromax.presentation.component.SearchableDropdown
 import kotlinx.coroutines.delay
 import java.net.URLEncoder
@@ -456,46 +453,69 @@ fun VoucherSelectionRow(productDiscount: Long, freeshipAmount: Long, onClick: ()
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VoucherBottomSheet(
-    availableVouchers: List<Voucher>, selectedDiscount: Voucher?, selectedFreeship: Voucher?,
-    currentSubTotal: Long, onDismiss: () -> Unit, onApplyCode: (String) -> Unit, onSelectVoucher: (Voucher) -> Unit
+    availableVouchers: List<Voucher>,
+    selectedDiscount: Voucher?,
+    selectedFreeship: Voucher?,
+    currentSubTotal: Long,
+    onDismiss: () -> Unit,
+    onApplyCode: (String) -> Unit,
+    onSelectVoucher: (Voucher) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var inputCode by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
-
     val freeshipVouchers = availableVouchers.filter { it.type == "FREESHIP" }
     val discountVouchers = availableVouchers.filter { it.type == "DISCOUNT" }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = BgLight) {
-        Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.9f)) {
-            Text("Chọn Voucher", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
+            Text("Chọn Voucher", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(16.dp))
+
             Row(modifier = Modifier.fillMaxWidth().background(Color.White).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
-                    value = inputCode, onValueChange = { inputCode = it.uppercase() }, placeholder = { Text("Nhập mã voucher...") },
-                    singleLine = true, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)
+                    value = inputCode,
+                    onValueChange = { inputCode = it.uppercase() },
+                    placeholder = { Text("Nhập mã voucher...") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Button(
                     onClick = { focusManager.clearFocus(); if (inputCode.isNotBlank()) onApplyCode(inputCode) },
-                    enabled = inputCode.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue),
-                    shape = RoundedCornerShape(8.dp), modifier = Modifier.height(56.dp)
+                    enabled = inputCode.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(56.dp)
                 ) { Text("ÁP DỤNG", fontWeight = FontWeight.Bold) }
             }
+
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (freeshipVouchers.isNotEmpty()) {
                     item { Text("Miễn Phí Vận Chuyển", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
                     items(freeshipVouchers) { v ->
-                        val isEligible = currentSubTotal >= v.minOrderValue && v.usedCount < v.usageLimit
-                        val isSelected = selectedFreeship?.code == v.code
-                        VoucherTicket(v, isSelected, isEligible, currentSubTotal, TealFreeship, Icons.Default.LocalShipping) { onSelectVoucher(v) }
+                        VoucherTicket(
+                            voucher = v,
+                            isSelected = selectedFreeship?.code == v.code,
+                            currentSubTotal = currentSubTotal,
+                            iconBgColor = TealFreeship,
+                            icon = Icons.Default.LocalShipping,
+                            onSelect = { onSelectVoucher(v) }
+                        )
                     }
                 }
+
                 if (discountVouchers.isNotEmpty()) {
                     item { Text("Giảm Giá Đơn Hàng", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
                     items(discountVouchers) { v ->
-                        val isEligible = currentSubTotal >= v.minOrderValue && v.usedCount < v.usageLimit
-                        val isSelected = selectedDiscount?.code == v.code
-                        VoucherTicket(v, isSelected, isEligible, currentSubTotal, GunplaBlue, Icons.Default.ConfirmationNumber) { onSelectVoucher(v) }
+                        VoucherTicket(
+                            voucher = v,
+                            isSelected = selectedDiscount?.code == v.code,
+                            currentSubTotal = currentSubTotal,
+                            iconBgColor = GunplaBlue,
+                            icon = Icons.Default.ConfirmationNumber,
+                            onSelect = { onSelectVoucher(v) }
+                        )
                     }
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -505,37 +525,100 @@ fun VoucherBottomSheet(
 }
 
 @Composable
-fun VoucherTicket(voucher: Voucher, isSelected: Boolean, isEligible: Boolean, currentSubTotal: Long, iconBgColor: Color, icon: ImageVector, onSelect: () -> Unit) {
+fun VoucherTicket(
+    voucher: Voucher,
+    isSelected: Boolean,
+    currentSubTotal: Long,
+    iconBgColor: Color,
+    icon: ImageVector,
+    onSelect: () -> Unit
+) {
     val formatter = DecimalFormat("#,###")
     val progress = if (voucher.usageLimit > 0) (voucher.usedCount.toFloat() / voucher.usageLimit.toFloat()).coerceIn(0f, 1f) else 0f
 
+    val currentTime = System.currentTimeMillis()
+    val isExpired = voucher.expirationDate < currentTime
+    val isDepleted = voucher.usedCount >= voucher.usageLimit
+    val isNotEnoughValue = currentSubTotal < voucher.minOrderValue
+
+    val canUse = !isExpired && !isDepleted && !isNotEnoughValue
+
     Card(
-        modifier = Modifier.fillMaxWidth().alpha(if (isEligible) 1f else 0.5f).clickable(enabled = isEligible) { onSelect() }.padding(bottom = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(8.dp), elevation = CardDefaults.cardElevation(2.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (canUse) 1f else 0.5f)
+            .padding(bottom = 8.dp)
+            .clickable(enabled = canUse) { onSelect() },
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(8.dp),
+        elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-            Box(modifier = Modifier.fillMaxHeight().width(90.dp).background(if (isEligible) iconBgColor else Color.Gray), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(90.dp)
+                    .background(if (canUse) iconBgColor else Color.Gray),
+                contentAlignment = Alignment.Center
+            ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(vertical = 16.dp)) {
                     Icon(icon, null, tint = Color.White, modifier = Modifier.size(28.dp))
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(if (voucher.type == "FREESHIP") "FREESHIP" else "DISCOUNT", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                    Text(
+                        if (voucher.type == "FREESHIP") "FREESHIP" else "DISCOUNT",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp
+                    )
                 }
             }
+
             Column(modifier = Modifier.weight(1f).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(voucher.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (isEligible) Text("Đơn tối thiểu ₫${formatter.format(voucher.minOrderValue)}", color = Color.Gray, fontSize = 11.sp)
-                else Text(if (voucher.usedCount >= voucher.usageLimit) "Đã hết lượt sử dụng" else "Mua thêm ₫${formatter.format(voucher.minOrderValue - currentSubTotal)} để áp dụng", color = AlertRed, fontSize = 11.sp)
+                when {
+                    isExpired -> {
+                        Text("Mã đã hết hạn sử dụng", color = AlertRed, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    }
+                    isDepleted -> {
+                        Text("Mã đã hết lượt sử dụng", color = AlertRed, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    }
+                    isNotEnoughValue -> {
+                        Text("Mua thêm ₫${formatter.format(voucher.minOrderValue - currentSubTotal)} để áp dụng", color = AlertRed, fontSize = 11.sp)
+                    }
+                    else -> {
+                        Text("Đơn tối thiểu ₫${formatter.format(voucher.minOrderValue)}", color = Color.Gray, fontSize = 11.sp)
+                    }
+                }
+
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    LinearProgressIndicator(progress = progress, modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)), color = if (progress >= 0.9f) AlertRed else iconBgColor, trackColor = Color(0xFFEEEEEE))
+                    LinearProgressIndicator(
+                        progress = progress,
+                        modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
+                        color = if (isDepleted || isExpired) Color.Gray else if (progress >= 0.9f) AlertRed else iconBgColor,
+                        trackColor = Color(0xFFEEEEEE)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Đã dùng ${(progress * 100).toInt()}%", fontSize = 10.sp, color = Color.Gray)
                 }
             }
-            Checkbox(checked = isSelected, onCheckedChange = null, colors = CheckboxDefaults.colors(checkedColor = iconBgColor), modifier = Modifier.align(Alignment.CenterVertically).padding(end = 8.dp))
+            if (canUse) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = null,
+                    colors = CheckboxDefaults.colors(checkedColor = iconBgColor),
+                    modifier = Modifier.align(Alignment.CenterVertically).padding(end = 8.dp)
+                )
+            } else {
+                Icon(
+                    Icons.Default.Block,
+                    contentDescription = null,
+                    tint = Color.LightGray,
+                    modifier = Modifier.align(Alignment.CenterVertically).padding(end = 16.dp).size(20.dp)
+                )
+            }
         }
     }
 }
-
 @Composable
 fun SectionCard(title: String, content: @Composable () -> Unit) {
     Card(colors = CardDefaults.cardColors(Color.White), elevation = CardDefaults.cardElevation(2.dp), modifier = Modifier.fillMaxWidth()) {

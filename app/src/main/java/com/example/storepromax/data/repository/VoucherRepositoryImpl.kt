@@ -11,13 +11,27 @@ class VoucherRepositoryImpl @Inject constructor(
     private val firestore: FirebaseFirestore
 ) : VoucherRepository {
 
-    override suspend fun getAvailableVouchers(): Result<List<Voucher>> {
+    override suspend fun saveVoucher(voucher: Voucher): Result<Boolean> {
         return try {
-            val snapshot = firestore.collection("vouchers")
-                .get()
-                .await()
-            val vouchers = snapshot.toObjects(Voucher::class.java)
-            Result.success(vouchers)
+            val vouchersCol = firestore.collection("vouchers")
+            if (voucher.id.isEmpty()) {
+                val duplicateCheck = vouchersCol.whereEqualTo("code", voucher.code.uppercase().trim()).get().await()
+                if (!duplicateCheck.isEmpty) {
+                    return Result.failure(Exception("Mã Voucher này đã tồn tại trên hệ thống!"))
+                }
+            }
+            val docRef = if (voucher.id.isEmpty()) {
+                vouchersCol.document()
+            } else {
+                vouchersCol.document(voucher.id)
+            }
+            val finalVoucher = voucher.copy(
+                id = docRef.id,
+                code = voucher.code.uppercase().trim()
+            )
+
+            docRef.set(finalVoucher).await()
+            Result.success(true)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -83,22 +97,35 @@ class VoucherRepositoryImpl @Inject constructor(
     override suspend fun updateVoucherStatus(voucherId: String, isActive: Boolean): Result<Boolean> {
         return try {
             firestore.collection("vouchers").document(voucherId)
-                .update("isActive", isActive).await()
+                .update("isActive", isActive)
+                .await()
             Result.success(true)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
-
-    override suspend fun saveVoucher(voucher: Voucher): Result<Boolean> {
+    override suspend fun getAvailableVouchers(): Result<List<Voucher>> {
         return try {
-            val docRef = if (voucher.id.isEmpty()) {
-                firestore.collection("vouchers").document()
-            } else {
-                firestore.collection("vouchers").document(voucher.id)
-            }
-            docRef.set(voucher).await()
-            Result.success(true)
+            val currentTime = System.currentTimeMillis()
+            val snapshot = firestore.collection("vouchers")
+                .whereEqualTo("isActive", true)
+                .get()
+                .await()
+
+            val vouchers = snapshot.toObjects(Voucher::class.java)
+                // Lọc thêm: Còn hạn và Còn lượt
+                .filter { it.expirationDate > currentTime && it.usedCount < it.usageLimit }
+
+            Result.success(vouchers)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    override suspend fun getAllVouchersForAdmin(): Result<List<Voucher>> {
+        return try {
+            val snapshot = firestore.collection("vouchers").get().await()
+            val vouchers = snapshot.toObjects(Voucher::class.java)
+            Result.success(vouchers)
         } catch (e: Exception) {
             Result.failure(e)
         }

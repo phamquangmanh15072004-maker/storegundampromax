@@ -6,7 +6,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cloudinary.android.MediaManager
 import com.cloudinary.android.callback.UploadCallback
-import com.example.storepromax.di.AppConfig
 import com.example.storepromax.domain.model.ChatMessageAI
 import com.example.storepromax.domain.model.Product
 import com.example.storepromax.domain.repository.CartRepository
@@ -16,7 +15,6 @@ import com.google.ai.client.generativeai.Chat
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,12 +22,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import java.util.UUID
 import javax.inject.Inject
 import android.content.Context
 import android.graphics.Bitmap
 import android.provider.MediaStore
 import com.cloudinary.android.callback.ErrorInfo
+import com.example.storepromax.BuildConfig
 import com.example.storepromax.domain.model.Post
 import com.google.ai.client.generativeai.type.content
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -184,7 +182,7 @@ class AIChatViewModel @Inject constructor(
                     
                     NHIỆM VỤ VÀ QUY TẮC TỐI THƯỢNG (VI PHẠM SẼ CRASH HỆ THỐNG):
                     
-                    1. VÀO THẲNG VẤN ĐỀ: Không dài dòng chào hỏi nếu đang ở giữa cuộc trò chuyện. Xưng hô là "Mạnh" hoặc "Em", gọi khách là "Anh/Chị" hoặc "Bạn".
+                    1. VÀO THẲNG VẤN ĐỀ: Không dài dòng chào hỏi nếu đang ở giữa cuộc trò chuyện. Xưng hô là "Gunpla" hoặc "Em", gọi khách là "Anh/Chị" hoặc "Bạn".
                     
                     2. KHI TƯ VẤN SẢN PHẨM & MARKETPLACE:
                        - ƯU TIÊN 1 (Hàng của Shop): Khi gợi ý sản phẩm của shop, BẮT BUỘC chèn mã [ID: id_san_pham] vào cuối câu. Có thể gộp ID: [ID: id1, id2].
@@ -220,7 +218,7 @@ class AIChatViewModel @Inject constructor(
                             sysPrompt
                         )
                     },
-                    apiKey = com.example.storepromax.BuildConfig.GEMINI_API_KEY
+                    apiKey = BuildConfig.GEMINI_API_KEY
                 )
 
                 val historyForGemini = _messages.value.map { msg ->
@@ -447,7 +445,6 @@ class AIChatViewModel @Inject constructor(
         try {
             val snapshot = firestore.collection("posts")
                 .whereEqualTo("status", "APPROVED")
-                // .orderBy("createdAt", Query.Direction.DESCENDING) // (Nếu có index)
                 .limit(20)
                 .get()
                 .await()

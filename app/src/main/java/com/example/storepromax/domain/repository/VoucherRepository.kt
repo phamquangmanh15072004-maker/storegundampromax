@@ -11,4 +11,5 @@ interface VoucherRepository {
     suspend fun claimVoucher(userId: String, voucher: Voucher): Result<Boolean>
     suspend fun updateVoucherStatus(voucherId: String, isActive: Boolean): Result<Boolean>
     suspend fun saveVoucher(voucher: Voucher): Result<Boolean>
+    suspend fun getAllVouchersForAdmin(): Result<List<Voucher>>
 }

@@ -36,7 +36,7 @@ fun AdminVoucherFormScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    var currentUsedCount by remember { mutableStateOf(0) }
+    var currentUsedCount by remember { mutableStateOf(0L) }
     var isDepleted by remember { mutableStateOf(false) }
 
     var code by remember { mutableStateOf("") }
@@ -85,7 +85,7 @@ fun AdminVoucherFormScreen(
             Surface(color = Color.White, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
                 Button(
                     onClick = {
-                        val finalUsedCount = if (isDepleted) 0 else currentUsedCount
+                        val finalUsedCount = if (isDepleted) 0L else currentUsedCount
 
                         val newVoucher = Voucher(
                             id = voucherId ?: "",
@@ -94,7 +94,7 @@ fun AdminVoucherFormScreen(
                             type = if (isFreeship) "FREESHIP" else "DISCOUNT",
                             discountValue = discountValue.toLongOrNull() ?: 0L,
                             minOrderValue = minOrderValue.toLongOrNull() ?: 0L,
-                            usageLimit = usageLimit.toIntOrNull() ?: 0,
+                            usageLimit = usageLimit.toLongOrNull() ?: 0L,
                             usedCount = finalUsedCount,
                             expirationDate = expirationDate,
                             isActive = true

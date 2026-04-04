@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.storepromax.domain.model.Voucher
 import com.example.storepromax.domain.repository.VoucherRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -33,13 +32,15 @@ class AdminVoucherViewModel @Inject constructor(
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading = _isLoading.asStateFlow()
+
     init {
         fetchAllVouchersForAdmin()
     }
+
     fun fetchAllVouchersForAdmin() {
         viewModelScope.launch {
             _isLoading.value = true
-            voucherRepository.getAvailableVouchers().onSuccess { list ->
+            voucherRepository.getAllVouchersForAdmin().onSuccess { list ->
                 _allVouchers.value = list.sortedByDescending { it.expirationDate }
             }
             _isLoading.value = false
@@ -47,6 +48,7 @@ class AdminVoucherViewModel @Inject constructor(
     }
 
     fun updateSearchQuery(query: String) { _searchQuery.value = query }
+
     fun toggleVoucherStatus(voucherId: String, currentStatus: Boolean) {
         val newStatus = !currentStatus
         _allVouchers.value = _allVouchers.value.map {
@@ -56,6 +58,7 @@ class AdminVoucherViewModel @Inject constructor(
             voucherRepository.updateVoucherStatus(voucherId, newStatus)
         }
     }
+
     fun saveVoucher(voucher: Voucher, onComplete: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             voucherRepository.saveVoucher(voucher).onSuccess {
@@ -66,6 +69,7 @@ class AdminVoucherViewModel @Inject constructor(
             }
         }
     }
+
     fun getVoucherById(id: String, onResult: (Voucher?) -> Unit) {
         viewModelScope.launch {
             try {
@@ -76,5 +80,23 @@ class AdminVoucherViewModel @Inject constructor(
                 onResult(null)
             }
         }
+    }
+
+    fun extendVoucher(voucher: Voucher, newExpiryDate: Long, newLimit: Long, onComplete: (Boolean, String) -> Unit) {
+        val extendedVoucher = voucher.copy(
+            expirationDate = newExpiryDate,
+            usageLimit = newLimit,
+            usedCount = 0L,
+            isActive = true
+        )
+        saveVoucher(extendedVoucher, onComplete)
+    }
+
+    fun editVoucherInfo(voucher: Voucher, newTitle: String, newDiscount: Long, onComplete: (Boolean, String) -> Unit) {
+        val editedVoucher = voucher.copy(
+            title = newTitle,
+            discountValue = newDiscount
+        )
+        saveVoucher(editedVoucher, onComplete)
     }
 }

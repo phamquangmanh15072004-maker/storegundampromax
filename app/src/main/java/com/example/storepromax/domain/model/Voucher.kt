@@ -1,6 +1,7 @@
 package com.example.storepromax.domain.model
 
 import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.PropertyName
 
 data class Voucher(
     @DocumentId
@@ -12,8 +13,10 @@ data class Voucher(
     val discountValue: Long = 0L,
     val maxDiscount: Long? = null,
     val minOrderValue: Long = 0L,
-    val usageLimit: Int = 0,
-    val usedCount: Int = 0,
+    val usageLimit: Long = 0L,
+    val usedCount: Long = 0L,
     val expirationDate: Long = 0L,
-    val isActive: Boolean = true
+    @get:PropertyName("isActive")
+    @set:PropertyName("isActive")
+    var isActive: Boolean = true
 )
