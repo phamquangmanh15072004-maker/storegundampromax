@@ -73,6 +73,12 @@ class VoucherRepositoryImpl @Inject constructor(
 
     override suspend fun claimVoucher(userId: String, voucher: Voucher): Result<Boolean> {
         return try {
+            val expirationTime = (voucher.expirationDate as? Number)?.toLong() ?: 0L
+            val deleteAtTime = if (expirationTime > 0) {
+                expirationTime + (90L * 24 * 60 * 60 * 1000) // Hết hạn + 90 ngày
+            } else {
+                System.currentTimeMillis() + (365L * 24 * 60 * 60 * 1000) // Nếu ko HSD thì xóa sau 1 năm
+            }
             val checkSnapshot = firestore.collection("user_vouchers")
                 .whereEqualTo("userId", userId)
                 .whereEqualTo("voucherId", voucher.id)
@@ -86,7 +92,8 @@ class VoucherRepositoryImpl @Inject constructor(
                 userId = userId,
                 voucherId = voucher.id,
                 voucher = voucher,
-                status = "AVAILABLE"
+                status = "AVAILABLE",
+                deleteAt = deleteAtTime
             )
             firestore.collection("user_vouchers").document().set(newUserVoucher).await()
             Result.success(true)
@@ -126,6 +133,24 @@ class VoucherRepositoryImpl @Inject constructor(
             val snapshot = firestore.collection("vouchers").get().await()
             val vouchers = snapshot.toObjects(Voucher::class.java)
             Result.success(vouchers)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    override suspend fun getVouchersByIds(voucherIds: List<String>): Result<List<Voucher>> {
+        return try {
+            if (voucherIds.isEmpty()) return Result.success(emptyList())
+            val chunks = voucherIds.chunked(10)
+            val allVouchers = mutableListOf<Voucher>()
+            for (chunk in chunks) {
+                val snapshot = firestore.collection("vouchers")
+                    .whereIn(com.google.firebase.firestore.FieldPath.documentId(), chunk) // Tìm theo ID của Document
+                    .get()
+                    .await()
+                allVouchers.addAll(snapshot.toObjects(Voucher::class.java))
+            }
+
+            Result.success(allVouchers)
         } catch (e: Exception) {
             Result.failure(e)
         }

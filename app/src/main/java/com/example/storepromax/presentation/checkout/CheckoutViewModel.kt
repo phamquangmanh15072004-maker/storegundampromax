@@ -147,7 +147,16 @@ class CheckoutViewModel @Inject constructor(
     fun cancelOrderFromPopup(orderId: String) {
         viewModelScope.launch {
             paymentListenerJob?.cancel()
-            orderRepository.cancelOrder(orderId, "Khách hàng đổi ý / Quên nhập Voucher")
+            orderRepository.cancelOrder(
+                orderId = orderId,
+                reason = "Khách hàng hủy từ màn hình thanh toán",
+                isPaid = false,
+                bankBin = null,
+                bankShortName = null,
+                accountNumber = null,
+                accountName = null
+            )
+
             _uiEvent.send("Đã hủy đơn hàng để đặt lại!")
         }
     }
@@ -231,9 +240,28 @@ class CheckoutViewModel @Inject constructor(
     fun refreshVouchers() {
         val userId = auth.currentUser?.uid ?: return
         viewModelScope.launch {
-            voucherRepository.getUserVouchers(userId).onSuccess { list ->
-                _availableVouchers.value = list.filter { it.status == "AVAILABLE" }.map { it.voucher }
-                applyPendingVouchers()
+            voucherRepository.getUserVouchers(userId).onSuccess { savedList ->
+                val availableSaved = savedList.filter { it.status == "AVAILABLE" }
+                val voucherIds = availableSaved.map { it.voucherId }.distinct()
+
+                if (voucherIds.isEmpty()) {
+                    _availableVouchers.value = emptyList()
+                    return@onSuccess
+                }
+
+                voucherRepository.getVouchersByIds(voucherIds).onSuccess { systemVouchers ->
+                    val currentTime = System.currentTimeMillis()
+
+                    val validVouchers = systemVouchers.filter { v ->
+                        val expTime = (v.expirationDate as? Number)?.toLong() ?: 0L
+                        val isNotExpired = expTime == 0L || expTime > currentTime
+
+                        v.isActive && isNotExpired && v.usedCount < v.usageLimit
+                    }
+
+                    _availableVouchers.value = validVouchers
+                    applyPendingVouchers()
+                }
             }
         }
     }
@@ -294,7 +322,8 @@ class CheckoutViewModel @Inject constructor(
                 address = address,
                 paymentMethod = paymentMethod.value,
                 shippingMethod = shippingMethod.value,
-                paymentStatus = "UNPAID",
+                //paymentStatus = "UNPAID",
+                paymentStatus = if (paymentMethod.value == "BANKING") "PAID" else "UNPAID",
                 status = "PENDING",
                 createdAt = System.currentTimeMillis(),
                 discountCode = dCode,
@@ -306,27 +335,28 @@ class CheckoutViewModel @Inject constructor(
                     _displayItems.value.forEach { cartRepository.removeFromCart(it.product.id) }
                 }
                 if (paymentMethod.value == "BANKING") {
-                    try {
-                        val response = BackendRetrofit.api.createPaymentLink(
-                            PaymentRequest(orderId, finalTotal, "Thanh toan don $orderId")
-                        )
-                        if (response.isSuccessful && response.body()?.success == true) {
-                            val body = response.body()!!
-                            onShowPaymentPopup(
-                                body.checkoutUrl ?: "",
-                                body.bin ?: "",
-                                body.accountNumber ?: "",
-                                body.description ?: "",
-                                orderId
-                            )
-                            listenToOrderPaymentStatus(orderId, finalTotal.toDouble())
-                        } else {
-                            val errorMsg = response.errorBody()?.string() ?: response.message()
-                            _uiEvent.send("Server PayOS từ chối: $errorMsg")
-                        }
-                    }catch (e: Exception){
-                        _uiEvent.send("Lỗi kết nối Server thanh toán: ${e.message}")
-                    }
+//                    try {
+//                        val response = BackendRetrofit.api.createPaymentLink(
+//                            PaymentRequest(orderId, finalTotal, "Thanh toan don $orderId")
+//                        )
+//                        if (response.isSuccessful && response.body()?.success == true) {
+//                            val body = response.body()!!
+//                            onShowPaymentPopup(
+//                                body.checkoutUrl ?: "",
+//                                body.bin ?: "",
+//                                body.accountNumber ?: "",
+//                                body.description ?: "",
+//                                orderId
+//                            )
+//                            listenToOrderPaymentStatus(orderId, finalTotal.toDouble())
+//                        } else {
+//                            val errorMsg = response.errorBody()?.string() ?: response.message()
+//                            _uiEvent.send("Server PayOS từ chối: $errorMsg")
+//                        }
+//                    }catch (e: Exception){
+//                        _uiEvent.send("Lỗi kết nối Server thanh toán: ${e.message}")
+//                    }
+                    onSuccess()
                 } else {
                     NotificationHelper.sendOrderNotificationToAdmin(context, orderId, finalTotal.toDouble())
                     onSuccess()

@@ -31,14 +31,40 @@ class CreatePostViewModel @Inject constructor(
 
     var grade = mutableStateOf("HG")
     var condition = mutableStateOf("USED")
-
+    var isEditMode = mutableStateOf(false)
+    var editPostId = mutableStateOf("")
+    var existingImageUrls = mutableStateOf<List<String>>(emptyList())
     var selectedImages = mutableStateOf<List<Uri>>(emptyList())
 
     var isLoading = mutableStateOf(false)
 
     private val _uiEvent = Channel<String>()
     val uiEvent = _uiEvent.receiveAsFlow()
+    fun loadPostDataForEdit(postId: String) {
+        viewModelScope.launch {
+            try {
+                isLoading.value = true
+                val result = postRepository.getPostById(postId)
 
+                result.onSuccess { post ->
+                    isEditMode.value = true
+                    editPostId.value = post.id
+                    title.value = post.title
+                    content.value = post.content
+                    price.value = post.price.toString()
+                    grade.value = post.grade
+                    condition.value = post.condition
+                    existingImageUrls.value = post.images
+                }.onFailure { error ->
+                    _uiEvent.send("Lỗi tải bài viết: ${error.message}")
+                }
+            } catch (e: Exception) {
+                _uiEvent.send("Đã xảy ra lỗi: ${e.message}")
+            } finally {
+                isLoading.value = false
+            }
+        }
+    }
     fun addImages(newUris: List<Uri>) {
         val currentList = selectedImages.value.toMutableList()
         currentList.addAll(newUris)
@@ -50,11 +76,79 @@ class CreatePostViewModel @Inject constructor(
         currentList.remove(uri)
         selectedImages.value = currentList
     }
+    fun removeExistingImage(url: String) {
+        val currentList = existingImageUrls.value.toMutableList()
+        currentList.remove(url)
+        existingImageUrls.value = currentList
+    }
+    fun submitPost() {
+        if (title.value.isBlank() || price.value.isBlank() || content.value.isBlank()) {
+            viewModelScope.launch { _uiEvent.send("Vui lòng nhập đủ tiêu đề, giá và nội dung!") }
+            return
+        }
 
+        viewModelScope.launch {
+            isLoading.value = true
+            val currentUser = FirebaseAuth.getInstance().currentUser
+
+            if (currentUser == null) {
+                _uiEvent.send("Lỗi: Bạn chưa đăng nhập!")
+                isLoading.value = false
+                return@launch
+            }
+
+            val finalUserName = if (!currentUser.displayName.isNullOrBlank()) currentUser.displayName else currentUser.email?.substringBefore("@") ?: "Ẩn danh"
+            val newlyUploadedUrls = if (selectedImages.value.isNotEmpty()) {
+                val uploadJobs = selectedImages.value.map { uri -> async { uploadImageToCloudinary(uri) } }
+                uploadJobs.awaitAll().filterNotNull()
+            } else {
+                emptyList()
+            }
+            val finalImagesList = existingImageUrls.value + newlyUploadedUrls
+
+            if (finalImagesList.isEmpty()) {
+                _uiEvent.send("Lỗi: Vui lòng thêm ít nhất 1 ảnh!")
+                isLoading.value = false
+                return@launch
+            }
+
+            val keywords = title.value.lowercase().split(" ").filter { it.isNotEmpty() }
+
+            val postToSave = Post(
+                id = if (isEditMode.value) editPostId.value else "", // NẾU EDIT THÌ DÙNG ID CŨ
+                userId = currentUser.uid,
+                userName = finalUserName ?: "NoName",
+                userAvatar = currentUser.photoUrl?.toString() ?: "",
+                title = title.value,
+                content = content.value,
+                price = price.value.toLongOrNull() ?: 0,
+                images = finalImagesList, // List ảnh đã gộp
+                grade = grade.value,
+                condition = condition.value,
+                status = "PENDING", // LUÔN VỀ PENDING CHỜ DUYỆT LẠI
+                searchKeywords = keywords,
+                createdAt = System.currentTimeMillis() // Cập nhật thời gian
+            )
+
+            // Rẽ nhánh gọi Repository
+            val result = if (isEditMode.value) {
+                postRepository.updatePost(postToSave)
+            } else {
+                postRepository.createPost(postToSave)
+            }
+
+            if (result.isSuccess) {
+                _uiEvent.send("Success")
+            } else {
+                _uiEvent.send("Lỗi: ${result.exceptionOrNull()?.message}")
+            }
+            isLoading.value = false
+        }
+    }
     private suspend fun uploadImageToCloudinary(uri: Uri): String? = suspendCancellableCoroutine { continuation ->
         try {
             MediaManager.get().upload(uri)
-                .option("folder", "store_promax/user_posts") // (Tùy chọn) Lưu vào thư mục riêng
+                .option("folder", "store_promax/user_posts")
                 .callback(object : UploadCallback {
                     override fun onStart(requestId: String) {}
                     override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
@@ -66,7 +160,7 @@ class CreatePostViewModel @Inject constructor(
 
                     override fun onError(requestId: String, error: ErrorInfo) {
                         android.util.Log.e("CLOUDINARY", "Lỗi upload: ${error.description}")
-                        continuation.resume(null) // Trả về null nếu lỗi
+                        continuation.resume(null)
                     }
 
                     override fun onReschedule(requestId: String, error: ErrorInfo) {}

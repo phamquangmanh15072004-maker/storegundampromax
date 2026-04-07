@@ -132,7 +132,7 @@ class PostRepositoryImpl @Inject constructor(
     override fun getPostsByUser(userId: String): Flow<List<Post>> = callbackFlow {
         val listener = firestore.collection("posts")
             .whereEqualTo("userId", userId)
-            .whereEqualTo("status", "APPROVED")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
@@ -296,6 +296,53 @@ class PostRepositoryImpl @Inject constructor(
                 .update("content", newContent).await()
             Result.success(Unit)
         } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    override fun getProcessedPosts(): Flow<List<Post>> = callbackFlow {
+        val listener = firestore.collection("posts")
+            .whereIn("status", listOf("APPROVED", "REJECTED"))
+            .orderBy("processedAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val posts = snapshot?.toObjects(Post::class.java) ?: emptyList()
+                trySend(posts)
+            }
+        awaitClose { listener.remove() }
+    }
+    override suspend fun updatePost(post: Post): Result<Boolean> {
+        return try {
+            val db = FirebaseFirestore.getInstance()
+            val finalPost = post.copy(
+                status = "PENDING",
+                rejectionReason = null,
+                createdAt = System.currentTimeMillis()
+            )
+            db.collection("posts").document(finalPost.id).set(finalPost).await()
+            Result.success(true)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+    override suspend fun getPostById(postId: String): Result<Post> {
+        return try {
+            val snapshot = firestore.collection("posts").document(postId).get().await()
+            if (snapshot.exists()) {
+                val post = snapshot.toObject(Post::class.java)
+                if (post != null) {
+                    Result.success(post)
+                } else {
+                    Result.failure(Exception("Không thể parse dữ liệu bài viết"))
+                }
+            } else {
+                Result.failure(Exception("Không tìm thấy bài viết"))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
             Result.failure(e)
         }
     }

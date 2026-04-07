@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.example.storepromax.domain.model.Voucher
 import com.example.storepromax.presentation.cart.GunplaBlue
 import com.example.storepromax.presentation.cart.TealFreeship
 import com.example.storepromax.presentation.cart.BgLight
@@ -39,8 +40,25 @@ fun MyVoucherScreen(
 
     var inputCode by remember { mutableStateOf("") }
     var selectedTabIndex by remember { mutableStateOf(0) }
-    val availableVouchers = myVouchers.filter { it.status == "AVAILABLE" }
-    val historyVouchers = myVouchers.filter { it.status != "AVAILABLE" }
+
+    val currentTime = System.currentTimeMillis()
+    val dateFormat =
+        remember { java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault()) }
+    val priceFormatter = remember { DecimalFormat("#,###") }
+    val availableVouchers = myVouchers.filter { userVoucher ->
+        val v = userVoucher.voucher
+        val validTime: Long = (v.expirationDate as? Number)?.toLong() ?: 0L
+        val isNotExpired = validTime == 0L || validTime > currentTime
+
+        userVoucher.status == "AVAILABLE" && isNotExpired
+    }
+    val historyVouchers = myVouchers.filter { userVoucher ->
+        val v = userVoucher.voucher
+        val validTime: Long = (v.expirationDate as? Number)?.toLong() ?: 0L
+        val isExpired = validTime > 0L && validTime <= currentTime
+
+        userVoucher.status != "AVAILABLE" || isExpired
+    }
 
     Scaffold(
         containerColor = BgLight,
@@ -49,19 +67,36 @@ fun MyVoucherScreen(
                 title = { Text("Kho Voucher", fontWeight = FontWeight.Bold, color = GunplaBlue) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = GunplaBlue)
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            tint = GunplaBlue
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         }
     ) { paddingValues ->
-        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            Row(modifier = Modifier.fillMaxWidth().background(Color.White).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 OutlinedTextField(
-                    value = inputCode, onValueChange = { inputCode = it.uppercase() },
-                    placeholder = { Text("Nhập mã voucher...", fontSize = 14.sp) }, singleLine = true,
-                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp),
+                    value = inputCode,
+                    onValueChange = { inputCode = it.uppercase() },
+                    placeholder = { Text("Nhập mã voucher...", fontSize = 14.sp) },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = GunplaBlue)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
@@ -86,10 +121,18 @@ fun MyVoucherScreen(
                 contentColor = GunplaBlue
             ) {
                 Tab(selected = selectedTabIndex == 0, onClick = { selectedTabIndex = 0 }) {
-                    Text("Có hiệu lực (${availableVouchers.size})", modifier = Modifier.padding(16.dp), fontWeight = FontWeight.Bold)
+                    Text(
+                        "Có hiệu lực (${availableVouchers.size})",
+                        modifier = Modifier.padding(16.dp),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
                 Tab(selected = selectedTabIndex == 1, onClick = { selectedTabIndex = 1 }) {
-                    Text("Lịch sử (${historyVouchers.size})", modifier = Modifier.padding(16.dp), fontWeight = FontWeight.Bold)
+                    Text(
+                        "Lịch sử (${historyVouchers.size})",
+                        modifier = Modifier.padding(16.dp),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
             val currentList = if (selectedTabIndex == 0) availableVouchers else historyVouchers
@@ -99,39 +142,101 @@ fun MyVoucherScreen(
                     Text("Chưa có mã giảm giá nào ở đây", color = Color.Gray)
                 }
             } else {
-                LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyColumn(
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     items(currentList, key = { it.id }) { userVoucher ->
                         val v = userVoucher.voucher
                         val formatter = DecimalFormat("#,###")
-                        val isAvailable = userVoucher.status == "AVAILABLE"
-                        val bgColor = if (!isAvailable) Color.Gray else if (v.type == "FREESHIP") TealFreeship else GunplaBlue
+                        val isAvailable = selectedTabIndex == 0
+                        val bgColor =
+                            if (!isAvailable) Color.Gray else if (v.type == "FREESHIP") TealFreeship else GunplaBlue
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = RoundedCornerShape(8.dp), elevation = CardDefaults.cardElevation(2.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = CardDefaults.cardElevation(2.dp)
                         ) {
-                            Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                                Box(modifier = Modifier.fillMaxHeight().width(90.dp).background(bgColor), contentAlignment = Alignment.Center) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(vertical = 16.dp)) {
-                                        Icon(if (v.type == "FREESHIP") Icons.Default.LocalShipping else Icons.Default.ConfirmationNumber, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(IntrinsicSize.Min)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxHeight()
+                                        .width(90.dp)
+                                        .background(bgColor), contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.padding(vertical = 16.dp)
+                                    ) {
+                                        Icon(
+                                            if (v.type == "FREESHIP") Icons.Default.LocalShipping else Icons.Default.ConfirmationNumber,
+                                            null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(28.dp)
+                                        )
                                         Spacer(modifier = Modifier.height(4.dp))
-                                        Text(if (v.type == "FREESHIP") "FREESHIP" else "DISCOUNT", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                        Text(
+                                            if (v.type == "FREESHIP") "FREESHIP" else "DISCOUNT",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 10.sp
+                                        )
                                     }
                                 }
-                                Column(modifier = Modifier.weight(1f).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
                                     Text(v.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    Text("Đơn tối thiểu ₫${formatter.format(v.minOrderValue)}", color = Color.Gray, fontSize = 11.sp)
+                                    Text(
+                                        "Đơn tối thiểu ₫${priceFormatter.format(v.minOrderValue)}",
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
 
                                     if (isAvailable) {
-                                        Text("HSD: Không giới hạn", color = GunplaBlue, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                        val validTime: Long =
+                                            (v.expirationDate as? Number)?.toLong() ?: 0L
+                                        val hsdText = if (validTime > 0L) {
+                                            val dateFormat = java.text.SimpleDateFormat(
+                                                "dd/MM/yyyy HH:mm",
+                                                java.util.Locale.getDefault()
+                                            )
+                                            "HSD: ${dateFormat.format(java.util.Date(validTime))}"
+                                        } else {
+                                            "HSD: Không giới hạn"
+                                        }
+                                        Text(
+                                            text = hsdText,
+                                            color = GunplaBlue,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
                                         Button(
-                                            onClick = { navController.navigate("home_screen") }, // Bấm thì quay ra Home mua sắm
-                                            modifier = Modifier.align(Alignment.End).height(32.dp),
+                                            onClick = { navController.navigate("home_screen") },
+                                            modifier = Modifier
+                                                .align(Alignment.End)
+                                                .height(32.dp),
                                             colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue),
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                                            contentPadding = PaddingValues(
+                                                horizontal = 12.dp,
+                                                vertical = 0.dp
+                                            )
                                         ) { Text("Dùng ngay", fontSize = 12.sp) }
                                     } else {
-                                        Text(if (userVoucher.status == "USED") "Đã sử dụng" else "Đã hết hạn", color = Color.Red, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = if (userVoucher.status == "USED") "Đã sử dụng" else "Đã hết hạn",
+                                            color = Color.Red,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
                             }

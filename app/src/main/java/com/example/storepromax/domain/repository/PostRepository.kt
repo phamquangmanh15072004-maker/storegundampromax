@@ -27,4 +27,7 @@ interface PostRepository {
     suspend fun addComment(postId: String, comment: Comment): Result<Unit>
     suspend fun deleteComment(postId: String, commentId: String): Result<Unit>
     suspend fun updateComment(commentId: String, newContent: String): Result<Unit>
+    fun getProcessedPosts(): Flow<List<Post>>
+    suspend fun updatePost(post: Post): Result<Boolean>
+    suspend fun getPostById(postId: String): Result<Post>
 }

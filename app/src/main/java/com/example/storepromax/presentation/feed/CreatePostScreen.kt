@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import coil.compose.AsyncImage // Nhớ import cái này
 import coil.compose.rememberAsyncImagePainter
 import java.text.DecimalFormat
 
@@ -71,8 +72,14 @@ class CurrencyAmountInputVisualTransformation : VisualTransformation {
 @Composable
 fun CreatePostScreen(
     navController: NavController,
+    postId: String? = null,
     viewModel: CreatePostViewModel = hiltViewModel()
 ) {
+    LaunchedEffect(postId) {
+        if (!postId.isNullOrBlank()) {
+            viewModel.loadPostDataForEdit(postId)
+        }
+    }
     val context = LocalContext.current
 
     val multiplePhotoPickerLauncher = rememberLauncherForActivityResult(
@@ -97,7 +104,7 @@ fun CreatePostScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("ĐĂNG BÁN GUNDAM", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                title = { Text(if (viewModel.isEditMode.value) "SỬA BÀI VIẾT" else "ĐĂNG BÁN GUNDAM", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = null)
@@ -126,7 +133,8 @@ fun CreatePostScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Hình ảnh sản phẩm (${viewModel.selectedImages.value.size}/10)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    val totalImages = viewModel.existingImageUrls.value.size + viewModel.selectedImages.value.size
+                    Text("Hình ảnh sản phẩm ($totalImages/10)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Text(
                         "Thêm ảnh",
                         color = Color(0xFF00D4FF),
@@ -137,9 +145,29 @@ fun CreatePostScreen(
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-
-                if (viewModel.selectedImages.value.isNotEmpty()) {
+                if (viewModel.existingImageUrls.value.isNotEmpty() || viewModel.selectedImages.value.isNotEmpty()) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(viewModel.existingImageUrls.value) { url ->
+                            Box(modifier = Modifier.size(100.dp)) {
+                                AsyncImage(
+                                    model = url,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(4.dp)
+                                        .size(24.dp)
+                                        .background(Color.White.copy(alpha = 0.9f), CircleShape)
+                                        .clickable { viewModel.removeExistingImage(url) }, // Hàm xóa ảnh cũ
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Xóa", modifier = Modifier.size(14.dp), tint = Color.Red)
+                                }
+                            }
+                        }
                         items(viewModel.selectedImages.value) { uri ->
                             Box(modifier = Modifier.size(100.dp)) {
                                 Image(
@@ -154,15 +182,10 @@ fun CreatePostScreen(
                                         .padding(4.dp)
                                         .size(24.dp)
                                         .background(Color.White.copy(alpha = 0.9f), CircleShape)
-                                        .clickable { viewModel.removeImage(uri) },
+                                        .clickable { viewModel.removeImage(uri) }, // Hàm xóa ảnh mới
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Xóa",
-                                        modifier = Modifier.size(14.dp),
-                                        tint = Color.Red
-                                    )
+                                    Icon(Icons.Default.Close, contentDescription = "Xóa", modifier = Modifier.size(14.dp), tint = Color.Red)
                                 }
                             }
                         }
@@ -299,10 +322,9 @@ fun CreatePostScreen(
                     )
                 )
             }
-
             Spacer(modifier = Modifier.height(8.dp))
             Button(
-                onClick = { viewModel.createPost() },
+                onClick = { viewModel.submitPost() },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1)),
                 shape = RoundedCornerShape(12.dp),
@@ -313,7 +335,11 @@ fun CreatePostScreen(
                 } else {
                     Icon(Icons.Default.CloudUpload, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("GỬI BÀI DUYỆT", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(
+                        text = if (viewModel.isEditMode.value) "CẬP NHẬT & XIN DUYỆT" else "GỬI BÀI DUYỆT",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(40.dp))

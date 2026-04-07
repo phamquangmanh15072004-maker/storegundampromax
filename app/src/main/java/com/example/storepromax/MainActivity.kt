@@ -412,6 +412,10 @@ class MainActivity : ComponentActivity() {
                         val id = backStackEntry.arguments?.getString("voucherId")
                         AdminVoucherFormScreen(navController = navController, voucherId = id)
                     }
+                    composable("edit_post/{postId}") { backStackEntry ->
+                        val postId = backStackEntry.arguments?.getString("postId")
+                        CreatePostScreen(navController = navController, postId = postId)
+                    }
                 }
             }
         }

@@ -67,10 +67,26 @@ class CartViewModel @Inject constructor(
         if (currentUserId.isEmpty()) return
 
         viewModelScope.launch {
-            voucherRepository.getUserVouchers(currentUserId).onSuccess { list ->
-                _availableVouchers.value = list
-                    .filter { it.status == "AVAILABLE" }
-                    .map { it.voucher }
+            voucherRepository.getUserVouchers(currentUserId).onSuccess { savedList ->
+                val availableSaved = savedList.filter { it.status == "AVAILABLE" }
+                val voucherIds = availableSaved.map { it.voucherId }.distinct()
+
+                if (voucherIds.isEmpty()) {
+                    _availableVouchers.value = emptyList()
+                    return@onSuccess
+                }
+                voucherRepository.getVouchersByIds(voucherIds).onSuccess { systemVouchers ->
+                    val currentTime = System.currentTimeMillis()
+                    val validVouchers = systemVouchers.filter { v ->
+                        val expTime = (v.expirationDate as? Number)?.toLong() ?: 0L
+                        val isNotExpired = expTime == 0L || expTime > currentTime
+
+                        v.isActive && isNotExpired && v.usedCount < v.usageLimit
+                    }
+
+                    _availableVouchers.value = validVouchers
+                    checkVoucherValidity()
+                }
             }
         }
     }

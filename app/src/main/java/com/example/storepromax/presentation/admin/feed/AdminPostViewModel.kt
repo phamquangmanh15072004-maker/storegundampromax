@@ -7,8 +7,11 @@ import com.example.storepromax.domain.repository.PostRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -19,11 +22,28 @@ class AdminFeedApprovalViewModel @Inject constructor(
 
     private val _pendingPosts = MutableStateFlow<List<Post>>(emptyList())
     val pendingPosts = _pendingPosts.asStateFlow()
+
+    private val _processedPosts = MutableStateFlow<List<Post>>(emptyList())
+    val processedPosts = _processedPosts.asStateFlow()
+
     private val _uiEvent = Channel<String>()
     val uiEvent = _uiEvent.receiveAsFlow()
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
 
+    val filteredProcessedPosts = combine(_processedPosts, _searchQuery) { posts, query ->
+        if (query.isBlank()) {
+            posts
+        } else {
+            posts.filter { post ->
+                post.title.contains(query, ignoreCase = true) ||
+                        post.userName.contains(query, ignoreCase = true)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     init {
         loadPendingPosts()
+        loadProcessedPosts()
     }
 
     private fun loadPendingPosts() {
@@ -33,20 +53,28 @@ class AdminFeedApprovalViewModel @Inject constructor(
             }
         }
     }
-
+    private fun loadProcessedPosts() {
+        viewModelScope.launch {
+            postRepository.getProcessedPosts().collect { posts ->
+                _processedPosts.value = posts
+            }
+        }
+    }
     fun approvePost(post: Post) {
         viewModelScope.launch {
-            postRepository.updatePostStatus(post.id, status = "APPROVED")
+            postRepository.updatePostStatus(post.id, status = "APPROVED", reason = null)
                 .onSuccess { _uiEvent.send("Đã duyệt bài: ${post.title}") }
                 .onFailure { _uiEvent.send("Lỗi: ${it.message}") }
         }
     }
-
     fun rejectPost(post: Post, reason: String) {
         viewModelScope.launch {
             postRepository.updatePostStatus(post.id, status = "REJECTED", reason = reason)
                 .onSuccess { _uiEvent.send("Đã từ chối bài: ${post.title}") }
                 .onFailure { _uiEvent.send("Lỗi: ${it.message}") }
         }
+    }
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
     }
 }

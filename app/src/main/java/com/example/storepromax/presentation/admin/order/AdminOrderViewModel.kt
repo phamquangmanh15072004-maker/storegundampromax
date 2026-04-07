@@ -19,6 +19,8 @@ object OrderStatus {
     const val SHIPPING = "SHIPPING"
     const val DELIVERED = "DELIVERED"
     const val CANCELLED = "CANCELLED"
+    const val REFUNDING = "REFUNDING"
+    const val REFUNDED = "REFUNDED"
 }
 
 @HiltViewModel
@@ -32,7 +34,6 @@ class AdminOrderViewModel @Inject constructor(
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
-
     val orders = combine(_allOrders, _searchQuery) { orders, query ->
         if (query.isBlank()) {
             orders
@@ -40,7 +41,7 @@ class AdminOrderViewModel @Inject constructor(
             orders.filter { order ->
                 order.id.contains(query, ignoreCase = true) ||
                         order.receiverName.contains(query, ignoreCase = true) ||
-                        order.receiverPhone.contains(query, ignoreCase = true) // Cải tiến: Tìm theo SĐT
+                        order.receiverPhone.contains(query, ignoreCase = true)
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -48,44 +49,65 @@ class AdminOrderViewModel @Inject constructor(
     fun onSearchQueryChange(query: String) {
         _searchQuery.value = query
     }
-    fun updateStatus(orderId: String, currentStatus: String) {
+    fun updateStatus(orderId: String, newStatus: String) {
         viewModelScope.launch {
-            val nextStatus = when (currentStatus) {
-                OrderStatus.PENDING -> OrderStatus.CONFIRMED
-                OrderStatus.CONFIRMED -> OrderStatus.SHIPPING
-                OrderStatus.SHIPPING -> OrderStatus.DELIVERED
-                else -> return@launch
-            }
-            orderRepository.updateOrderStatus(orderId, nextStatus).onSuccess {
+            orderRepository.updateOrderStatus(orderId, newStatus).onSuccess {
                 val currentOrder = _allOrders.first().find { it.id == orderId }
                 if (currentOrder != null) {
-                    sendNotificationToUser(currentOrder.userId, currentOrder.id, nextStatus)
+                    sendNotificationToUser(currentOrder.userId, currentOrder.id, newStatus)
                 }
             }
         }
     }
     fun cancelOrder(orderId: String, reason: String) {
         viewModelScope.launch {
-            orderRepository.cancelOrder(orderId, reason)
-            val currentOrder = _allOrders.first().find { it.id == orderId }
-            if (currentOrder != null) {
-                sendNotificationToUser(currentOrder.userId, currentOrder.id, OrderStatus.CANCELLED, reason)
+            val currentOrder = _allOrders.first().find { it.id == orderId } ?: return@launch
+            val isPaid = currentOrder.paymentStatus == "PAID"
+
+            orderRepository.cancelOrder(
+                orderId = orderId,
+                reason = "Shop hủy: $reason",
+                isPaid = isPaid,
+                bankBin = null,
+                bankShortName = null,
+                accountNumber = null,
+                accountName = null
+            )
+            val notifyStatus = if (isPaid) OrderStatus.REFUNDING else OrderStatus.CANCELLED
+            sendNotificationToUser(currentOrder.userId, currentOrder.id, notifyStatus, reason)
+        }
+    }
+    fun confirmRefund(orderId: String) {
+        viewModelScope.launch {
+            val currentOrder = _allOrders.first().find { it.id == orderId } ?: return@launch
+            if (currentOrder.status == OrderStatus.REFUNDING) {
+                orderRepository.updateOrderStatus(orderId, OrderStatus.REFUNDED).onSuccess {
+                    sendNotificationToUser(
+                        userId = currentOrder.userId,
+                        orderId = currentOrder.id,
+                        status = OrderStatus.REFUNDED,
+                        reason = "Tiền đã được hoàn về tài khoản ${currentOrder.refundBankShortName} của bạn."
+                    )
+                }
             }
         }
     }
+
     private fun sendNotificationToUser(userId: String, orderId: String, status: String, reason: String = "") {
         viewModelScope.launch {
             try {
                 val document = firestore.collection("users").document(userId).get().await()
                 val token = document.getString("fcmToken") ?: ""
-                NotificationHelper.sendOrderNotification(
-                    context = context,
-                    userToken = token,
-                    userId = userId,
-                    orderId = orderId,
-                    status = status,
-                    cancelReason = reason
-                )
+                if (token.isNotEmpty()) {
+                    NotificationHelper.sendOrderNotification(
+                        context = context,
+                        userToken = token,
+                        userId = userId,
+                        orderId = orderId,
+                        status = status,
+                        cancelReason = reason
+                    )
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }

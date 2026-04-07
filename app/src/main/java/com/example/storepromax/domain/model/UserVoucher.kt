@@ -9,5 +9,6 @@ data class UserVoucher(
     val voucherId: String = "",
     val voucher: Voucher = Voucher(),
     val status: String = "AVAILABLE",
-    val claimedAt: Long = System.currentTimeMillis()
+    val claimedAt: Long = System.currentTimeMillis(),
+    val deleteAt: Long? = null
 )

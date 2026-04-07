@@ -32,9 +32,18 @@ class MyVoucherViewModel @Inject constructor(
     fun fetchMyVouchers() {
         viewModelScope.launch {
             _isLoading.value = true
+
             voucherRepository.getUserVouchers(currentUserId).onSuccess { mySavedVouchers ->
-                voucherRepository.getAllVouchersForAdmin().onSuccess { allSystemVouchers ->
-                    val systemVoucherMap = allSystemVouchers.associateBy { it.id }
+                val voucherIds = mySavedVouchers.map { it.voucherId }.distinct()
+                if (voucherIds.isEmpty()) {
+                    _myVouchers.value = emptyList()
+                    _isLoading.value = false
+                    return@launch
+                }
+
+                voucherRepository.getVouchersByIds(voucherIds).onSuccess { latestVouchers ->
+                    val systemVoucherMap = latestVouchers.associateBy { it.id }
+
                     val synchronizedVouchers = mySavedVouchers.mapNotNull { savedItem ->
                         val latestVoucher = systemVoucherMap[savedItem.voucherId]
                         if (latestVoucher == null) {
@@ -49,6 +58,7 @@ class MyVoucherViewModel @Inject constructor(
             _isLoading.value = false
         }
     }
+
     fun claimVoucherByCode(code: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             voucherRepository.getVoucherByCode(code.uppercase().trim()).onSuccess { voucher ->

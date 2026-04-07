@@ -2,15 +2,19 @@ package com.example.storepromax.presentation.order
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
@@ -27,6 +31,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Order
+import com.example.storepromax.domain.model.VietQRBank
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -41,11 +46,11 @@ fun OrderHistoryScreen(
     val allOrders by viewModel.orders.collectAsState()
     var selectedTabIndex by remember { mutableIntStateOf(initialTabIndex) }
 
-    // 🌟 STATE QUẢN LÝ DIALOG HỦY ĐƠN CỦA USER
+    val banks by viewModel.banks.collectAsState()
     var orderToCancel by remember { mutableStateOf<Order?>(null) }
 
-    val statusCodes = listOf("ALL", "PENDING", "CONFIRMED", "SHIPPING", "DELIVERED", "CANCELLED")
-    val tabTitles = listOf("Tất cả", "Chờ xác nhận", "Đã xác nhận", "Đang giao", "Đã giao", "Đã hủy")
+    val statusCodes = listOf("ALL", "PENDING", "CONFIRMED", "SHIPPING", "DELIVERED", "CANCELLED", "REFUNDING", "REFUNDED")
+    val tabTitles = listOf("Tất cả", "Chờ xác nhận", "Đã xác nhận", "Đang giao", "Hoàn thành", "Đã hủy", "Chờ hoàn tiền", "Đã hoàn tiền")
 
     val filteredOrders = remember(allOrders, selectedTabIndex) {
         if (selectedTabIndex == 0) allOrders else allOrders.filter { it.status == statusCodes[selectedTabIndex] }
@@ -78,10 +83,37 @@ fun OrderHistoryScreen(
                 }
             ) {
                 tabTitles.forEachIndexed { index, title ->
+                    val count = if (index == 0) allOrders.size else allOrders.count { it.status == statusCodes[index] }
+                    val isSelected = selectedTabIndex == index
+
                     Tab(
-                        selected = selectedTabIndex == index,
+                        selected = isSelected,
                         onClick = { selectedTabIndex = index },
-                        text = { Text(title, fontSize = 13.sp, fontWeight = if (selectedTabIndex == index) FontWeight.Bold else FontWeight.Medium, color = if (selectedTabIndex == index) primaryColor else Color.Gray) }
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = title,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) primaryColor else Color.Gray
+                                )
+                                if (count > 0) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Surface(
+                                        color = if (isSelected) primaryColor.copy(alpha = 0.1f) else Color(0xFFEEEEEE),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Text(
+                                            text = count.toString(),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) primaryColor else Color.Gray,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -106,80 +138,176 @@ fun OrderHistoryScreen(
             }
         }
     }
+
     if (orderToCancel != null) {
+        val isPaid = orderToCancel!!.paymentStatus == "PAID"
         UserCancelOrderDialog(
+            isPaid = isPaid,
+            banks = banks,
             onDismiss = { orderToCancel = null },
-            onConfirm = { reason ->
-                viewModel.cancelOrder(orderToCancel!!.id, reason)
+            onConfirm = { reason, bin, shortName, accNum, accName ->
+                viewModel.cancelOrder(
+                    orderId = orderToCancel!!.id,
+                    reason = reason,
+                    isPaid = isPaid,
+                    bankBin = bin,
+                    bankShortName = shortName,
+                    accountNumber = accNum,
+                    accountName = accName
+                )
                 orderToCancel = null
             }
         )
     }
 }
-
-// 🌟 DIALOG CHỌN LÝ DO HỦY CỦA USER
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UserCancelOrderDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    val reasons = listOf(
-        "Tôi muốn thay đổi địa chỉ giao hàng",
-        "Tôi muốn thêm/bớt sản phẩm",
-        "Tôi quên áp mã giảm giá",
-        "Đổi ý, không muốn mua nữa",
-        "Lý do khác"
-    )
+fun UserCancelOrderDialog(
+    isPaid: Boolean,
+    banks: List<VietQRBank>,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String?, String?, String?, String?) -> Unit
+) {
+    val reasons = listOf("Thay đổi địa chỉ", "Thêm/bớt sản phẩm", "Quên áp mã", "Đổi ý", "Lý do khác")
     var selectedReason by remember { mutableStateOf(reasons[0]) }
     var customReason by remember { mutableStateOf("") }
+
+    var selectedBank by remember { mutableStateOf<VietQRBank?>(null) }
+    var accNum by remember { mutableStateOf("") }
+    var accName by remember { mutableStateOf("") }
+
+    var showBankSheet by remember { mutableStateOf(false) }
+
+    val canConfirm = if (isPaid) {
+        selectedBank != null && accNum.isNotBlank() && accName.isNotBlank()
+    } else true
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color.White,
-        title = { Text("Xác nhận hủy đơn", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+        title = { Text("Xác nhận hủy đơn", fontWeight = FontWeight.Bold) },
         text = {
-            Column {
-                Text("Bạn chắc chắn muốn hủy đơn hàng này? Vui lòng cho chúng tôi biết lý do:", fontSize = 14.sp, color = Color.Gray)
-                Spacer(modifier = Modifier.height(12.dp))
-
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text("Lý do hủy đơn:", fontSize = 14.sp, color = Color.Gray)
                 reasons.forEach { text ->
                     Row(
                         Modifier.fillMaxWidth().selectable(
                             selected = (text == selectedReason),
                             onClick = { selectedReason = text }
-                        ).padding(vertical = 8.dp),
+                        ).padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RadioButton(
-                            selected = (text == selectedReason),
-                            onClick = { selectedReason = text },
-                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF007AFF))
-                        )
-                        Text(text = text, fontSize = 14.sp, modifier = Modifier.padding(start = 8.dp))
+                        RadioButton(selected = (text == selectedReason), onClick = { selectedReason = text }, colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF007AFF)))
+                        Text(text, fontSize = 14.sp, modifier = Modifier.padding(start = 8.dp))
                     }
                 }
 
-                if (selectedReason == "Lý do khác") {
-                    OutlinedTextField(
-                        value = customReason,
-                        onValueChange = { customReason = it },
-                        placeholder = { Text("Nhập lý do của bạn...") },
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        singleLine = true
-                    )
+                if (isPaid) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Thông tin nhận hoàn tiền:", fontWeight = FontWeight.Bold, color = Color(0xFFE65100), fontSize = 14.sp)
+                    Surface(
+                        color = Color(0xFFFFF0F0),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "⚠️ Lưu ý: Shop sẽ hoàn tiền ĐÚNG vào STK bạn cung cấp dưới đây. Shop không chịu trách nhiệm nếu bạn nhập sai thông tin.",
+                            color = Color(0xFFD32F2F),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedCard(
+                        onClick = { showBankSheet = true },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        colors = CardDefaults.outlinedCardColors(containerColor = Color.White),
+                        border = BorderStroke(1.dp, Color.LightGray)
+                    ) {
+                        Row(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (selectedBank != null) {
+                                AsyncImage(model = selectedBank!!.logo, contentDescription = null, modifier = Modifier.size(32.dp).clip(RoundedCornerShape(4.dp)), contentScale = ContentScale.Fit)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(selectedBank!!.shortName, fontWeight = FontWeight.Medium, color = Color.Black)
+                            } else {
+                                Text("Chạm để chọn Ngân hàng...", color = Color.Gray)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(value = accNum, onValueChange = { accNum = it }, label = { Text("Số tài khoản nhận tiền") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(value = accName, onValueChange = { accName = it.uppercase() }, label = { Text("Tên in trên thẻ (Tự viết hoa)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val finalReason = if (selectedReason == "Lý do khác") customReason.ifBlank { "Khách hàng đổi ý" } else selectedReason
-                    onConfirm(finalReason)
+                    val res = if (selectedReason == "Lý do khác") customReason.ifBlank { "Lý do khác" } else selectedReason
+                    onConfirm(res, selectedBank?.bin, selectedBank?.shortName, accNum, accName)
                 },
+                enabled = canConfirm,
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
             ) { Text("Đồng ý Hủy") }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Bỏ qua", color = Color.Gray) }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Bỏ qua", color = Color.Gray) } }
     )
+    if (showBankSheet) {
+        ModalBottomSheet(onDismissRequest = { showBankSheet = false }, containerColor = Color.White) {
+            BankSearchContent(
+                banks = banks,
+                onBankSelected = {
+                    selectedBank = it
+                    showBankSheet = false
+                }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BankSearchContent(banks: List<VietQRBank>, onBankSelected: (VietQRBank) -> Unit) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredBanks = remember(searchQuery, banks) {
+        if (searchQuery.isBlank()) banks else banks.filter { it.shortName.contains(searchQuery, ignoreCase = true) }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f).padding(16.dp)) {
+        Text("Chọn Ngân hàng", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("Tìm kiếm ngân hàng...") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(filteredBanks) { bank ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { onBankSelected(bank) }.padding(vertical = 12.dp, horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = bank.logo,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp).background(Color.White, RoundedCornerShape(8.dp)).padding(4.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(bank.shortName, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                }
+                Divider(color = Color(0xFFF5F5F5))
+            }
+        }
+    }
 }
 
 @Composable
@@ -197,6 +325,9 @@ fun OrderItem(
         "SHIPPING" -> Triple("Đang giao", Color(0xFF00838F), Color(0xFFB2EBF2))
         "DELIVERED" -> Triple("Hoàn thành", Color(0xFF2E7D32), Color(0xFFC8E6C9))
         "CANCELLED" -> Triple("Đã hủy", Color(0xFFC62828), Color(0xFFFFCDD2))
+        "REFUNDING" -> Triple("Chờ hoàn tiền", Color(0xFFE65100), Color(0xFFFFE0B2))
+        "REFUNDED" -> Triple("Đã hoàn tiền", Color(0xFF2E7D32), Color(0xFFC8E6C9))
+
         else -> Triple("Không rõ", Color.Gray, Color(0xFFEEEEEE))
     }
 
@@ -241,26 +372,42 @@ fun OrderItem(
                 Text(text = "Xem thêm ${order.items.size - 2} sản phẩm khác...", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 8.dp, start = 4.dp))
             }
 
-            // 🌟 HIỂN THỊ LÝ DO HỦY ĐƠN VỚI UI ĐẸP MẮT
-            if (order.status == "CANCELLED" && !order.cancelReason.isNullOrBlank()) {
+            if ((order.status == "CANCELLED" || order.status == "REFUNDING" || order.status == "REFUNDED") && !order.cancelReason.isNullOrBlank()) {
                 Surface(
-                    color = Color(0xFFFFF0F0),
+                    color = if (order.status == "CANCELLED") Color(0xFFFFF0F0) else Color(0xFFF5F5F5),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
                 ) {
-                    Text(
-                        text = "Lý do hủy: ${order.cancelReason}",
-                        color = Color(0xFFD32F2F),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(12.dp)
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = if (order.status == "CANCELLED") "Lý do hủy: ${order.cancelReason}" else "Lý do hoàn tiền: ${order.cancelReason}",
+                            color = if (order.status == "CANCELLED") Color(0xFFD32F2F) else Color.DarkGray,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        if (!order.refundAccountNumber.isNullOrBlank()) {
+                            Divider(modifier = Modifier.padding(vertical = 8.dp), color = Color.LightGray.copy(alpha = 0.5f))
+                            Text(text = "Hoàn tiền về: ${order.refundBankShortName} - ${order.refundAccountNumber}", fontSize = 12.sp, color = Color(0xFF1565C0), fontWeight = FontWeight.Bold)
+                            Text(text = "Chủ TK: ${order.refundAccountName}", fontSize = 12.sp, color = Color(0xFF1565C0))
+                        }
+                    }
+                }
+            }
+
+            if (order.status == "REFUNDED" && !order.refundReceiptUrl.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("✅ Biên lai đã hoàn tiền từ Shop:", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32), modifier = Modifier.padding(bottom = 6.dp))
+                    AsyncImage(
+                        model = order.refundReceiptUrl,
+                        contentDescription = "Biên lai hoàn tiền",
+                        modifier = Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFEEEEEE)),
+                        contentScale = ContentScale.Fit
                     )
                 }
             }
 
             Divider(color = Color(0xFFF0F0F0), modifier = Modifier.padding(vertical = 12.dp))
-
-            // Footer
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -274,7 +421,6 @@ fun OrderItem(
                     }
                 }
 
-                // CHỈ CHO PHÉP HỦY KHI PENDING
                 if (order.status == "PENDING") {
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {

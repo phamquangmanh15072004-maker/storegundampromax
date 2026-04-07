@@ -22,5 +22,10 @@ data class Order(
     val cancelReason: String = "",
     val shippingMethod: String = "STANDARD",
     val discountCode: String? = null,
-    val freeshipCode: String? = null
+    val freeshipCode: String? = null,
+    val refundBankBin: String? = null,
+    val refundBankShortName: String? = null,
+    val refundAccountNumber: String? = null,
+    val refundAccountName: String? = null,
+    val refundReceiptUrl: String? = null
 )

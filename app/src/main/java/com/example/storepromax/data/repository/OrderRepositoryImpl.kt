@@ -121,16 +121,25 @@ class OrderRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
-
-    override suspend fun cancelOrder(orderId: String, reason: String) {
+    override suspend fun cancelOrder(
+        orderId: String,
+        reason: String,
+        isPaid: Boolean,
+        bankBin: String?,
+        bankShortName: String?,
+        accountNumber: String?,
+        accountName: String?
+    ) {
         try {
             val orderRef = firestore.collection("orders").document(orderId)
             val orderSnapshot = orderRef.get().await()
             val order = orderSnapshot.toObject(Order::class.java) ?: return
+
             var globalDiscountRef: com.google.firebase.firestore.DocumentReference? = null
             var userDiscountRef: com.google.firebase.firestore.DocumentReference? = null
             var globalFreeshipRef: com.google.firebase.firestore.DocumentReference? = null
             var userFreeshipRef: com.google.firebase.firestore.DocumentReference? = null
+
             order.discountCode?.let { code ->
                 globalDiscountRef = firestore.collection("vouchers").whereEqualTo("code", code).get().await().documents.firstOrNull()?.reference
                 userDiscountRef = firestore.collection("user_vouchers")
@@ -145,12 +154,21 @@ class OrderRepositoryImpl @Inject constructor(
                     .whereEqualTo("voucher.code", code)
                     .get().await().documents.firstOrNull()?.reference
             }
+
             firestore.runTransaction { transaction ->
                 val currentOrderSnap = transaction.get(orderRef)
                 val currentOrder = currentOrderSnap.toObject(Order::class.java)
-                if (currentOrder != null && currentOrder.status != "CANCELLED") {
-                    transaction.update(orderRef, "status", "CANCELLED")
+                if (currentOrder != null && currentOrder.status == "PENDING") {
+                    val newStatus = if (isPaid) "REFUNDING" else "CANCELLED"
+
+                    transaction.update(orderRef, "status", newStatus)
                     transaction.update(orderRef, "cancelReason", reason)
+                    if (isPaid) {
+                        transaction.update(orderRef, "refundBankBin", bankBin)
+                        transaction.update(orderRef, "refundBankShortName", bankShortName)
+                        transaction.update(orderRef, "refundAccountNumber", accountNumber)
+                        transaction.update(orderRef, "refundAccountName", accountName)
+                    }
                     for (item in currentOrder.items) {
                         val productRef = firestore.collection("products").document(item.product.id)
                         transaction.update(productRef, "stock", FieldValue.increment(item.quantity.toLong()))
@@ -200,5 +218,19 @@ class OrderRepositoryImpl @Inject constructor(
             } else { trySend(null) }
         }
         awaitClose { subscription.remove() }
+    }
+    override suspend fun confirmRefundWithReceipt(orderId: String, receiptUrl: String): Result<Boolean> {
+        return try {
+            firestore.collection("orders").document(orderId)
+                .update(
+                    mapOf(
+                        "status" to "REFUNDED",
+                        "refundReceiptUrl" to receiptUrl
+                    )
+                ).await()
+            Result.success(true)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }
