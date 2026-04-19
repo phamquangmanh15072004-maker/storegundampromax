@@ -1,5 +1,7 @@
 package com.example.storepromax.domain.model
 
+import com.google.firebase.firestore.PropertyName
+
 data class User(
     val id: String = "",
     val email: String = "",
@@ -20,8 +22,9 @@ data class User(
     val districtName: String = "",
     val wardName: String = "",
 
-    @field:JvmField
-    val isLocked: Boolean = false,
+    @get:PropertyName("isLocked")
+    @set:PropertyName("isLocked")
+    var isLocked: Boolean = false,
 
     val lockReason: String = "",
     val lockedAt: Long = 0,

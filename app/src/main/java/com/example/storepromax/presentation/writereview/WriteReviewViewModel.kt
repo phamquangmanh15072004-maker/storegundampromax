@@ -10,6 +10,7 @@ import com.cloudinary.android.callback.ErrorInfo
 import com.cloudinary.android.callback.UploadCallback
 import com.example.storepromax.domain.model.Product
 import com.example.storepromax.domain.repository.ReviewRepository
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -47,23 +48,22 @@ class WriteReviewViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _isLoading.value = true
+                val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@launch
                 val orderSnapshot = firestore.collection("orders").document(orderId).get().await()
-
                 val items = orderSnapshot.get("items") as? List<Map<String, Any>>
-
-                val reviewedProducts = orderSnapshot.get("reviewedProducts") as? List<String> ?: emptyList()
-
                 if (items == null) {
                     _productsToReview.value = emptyList()
                     return@launch
                 }
-
+                val userReviewsSnapshot = firestore.collection("reviews")
+                    .whereEqualTo("userId", userId)
+                    .get().await()
+                val alreadyReviewedProductIds = userReviewsSnapshot.documents.mapNotNull { it.getString("productId") }.toSet()
                 val productList = mutableListOf<Product>()
                 for (item in items) {
                     val productMap = item["product"] as? Map<String, Any>
                     val productId = productMap?.get("id") as? String ?: continue
-
-                    if (reviewedProducts.contains(productId)) {
+                    if (alreadyReviewedProductIds.contains(productId)) {
                         continue
                     }
 
@@ -72,6 +72,10 @@ class WriteReviewViewModel @Inject constructor(
                     if (product != null) {
                         productList.add(product.copy(id = productSnapshot.id))
                     }
+                }
+                if (productList.isEmpty()) {
+                    firestore.collection("orders").document(orderId)
+                        .update("status", "COMPLETED_REVIEWED")
                 }
 
                 _productsToReview.value = productList

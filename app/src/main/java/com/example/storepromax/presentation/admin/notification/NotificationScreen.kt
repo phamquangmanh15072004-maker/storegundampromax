@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.example.storepromax.domain.model.UserNotification
 import com.example.storepromax.presentation.admin.notification.NotificationViewModel
@@ -34,7 +35,7 @@ fun NotificationScreen(
     navController: NavController,
     viewModel: NotificationViewModel = hiltViewModel()
 ) {
-    val notifications by viewModel.notifications.collectAsState()
+    val notifications by viewModel.notifications.collectAsStateWithLifecycle()
 
     var showMenu by remember { mutableStateOf(false) }
 
@@ -54,10 +55,11 @@ fun NotificationScreen(
                         }
                         DropdownMenu(
                             expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
+                            onDismissRequest = { showMenu = false },
+                            containerColor = Color.White
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Đánh dấu đã đọc tất cả") },
+                                text = { Text("Đánh dấu đã đọc tất cả", color = Color.Black) },
                                 leadingIcon = { Icon(Icons.Default.DoneAll, contentDescription = null, tint = GunplaBlue) },
                                 onClick = {
                                     viewModel.markAllAsRead()
@@ -117,9 +119,16 @@ fun NotificationScreen(
                                         navController.navigate("write_review_screen/${notification.orderId}")
                                     }
                                     notification.orderId != null -> {
-                                        navController.navigate("order_detail/${notification.orderId}")
+                                        val tabIndex = when {
+                                            notification.title.contains("xác nhận", ignoreCase = true) -> 2
+                                            notification.title.contains("vận chuyển", ignoreCase = true) || notification.title.contains("giao hàng", ignoreCase = true) -> 3
+                                            notification.title.contains("thành công", ignoreCase = true) -> 4
+                                            notification.title.contains("hủy", ignoreCase = true) -> 5
+                                            notification.title.contains("hoàn tiền", ignoreCase = true) -> 6
+                                            else -> 0
+                                        }
+                                        navController.navigate("order_history_screen/$tabIndex")
                                     }
-
                                 }
                             }
                         )
@@ -136,14 +145,20 @@ fun NotificationItem(
     onClick: () -> Unit
 ) {
     val backgroundColor = if (!item.isRead) Color(0xFFE3F2FD) else Color.White
-
     val (icon, iconColor, iconBgColor) = when (item.type) {
-        "DELIVERED" -> Triple(Icons.Default.CheckCircle, Color(0xFF4CAF50), Color(0xFFE8F5E9))
-        "SHIPPING" -> Triple(Icons.Default.LocalShipping, GunplaBlue, Color(0xFFE3F2FD))
-        "CONFIRMED" -> Triple(Icons.Default.Receipt, Color(0xFFFF9800), Color(0xFFFFF3E0))
-        "CANCELLED" -> Triple(Icons.Default.Cancel, Color.Red, Color(0xFFFFEBEE))
+        "ORDER_UPDATE" -> {
+            if (item.title.contains("thành công")) {
+                Triple(Icons.Default.CheckCircle, Color(0xFF4CAF50), Color(0xFFE8F5E9))
+            } else if (item.title.contains("hủy")) {
+                Triple(Icons.Default.Cancel, Color.Red, Color(0xFFFFEBEE))
+            } else {
+                Triple(Icons.Default.LocalShipping, GunplaBlue, Color(0xFFE3F2FD))
+            }
+        }
+        "NEW_ORDER" -> Triple(Icons.Default.Receipt, Color(0xFFFF9800), Color(0xFFFFF3E0))
         "COMMENT" -> Triple(Icons.Default.ChatBubbleOutline, Color(0xFF0288D1), Color(0xFFE1F5FE))
         "LIKE" -> Triple(Icons.Default.Favorite, Color(0xFFFF424F), Color(0xFFFFEBEE))
+        "CHAT", "CHAT_ADMIN" -> Triple(Icons.Default.Message, Color(0xFF9C27B0), Color(0xFFF3E5F5))
         else -> Triple(Icons.Default.Notifications, Color.Gray, Color(0xFFF5F5F5))
     }
 

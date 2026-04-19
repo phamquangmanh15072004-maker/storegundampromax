@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.storepromax.domain.model.Voucher
+import com.example.storepromax.presentation.cart.GunplaBlue
 import com.example.storepromax.presentation.cart.TealFreeship
 import io.github.sceneview.math.Box
 import java.text.DecimalFormat
@@ -76,7 +77,6 @@ fun VoucherHomeSection(
                             )
                         }
 
-                        // Cột giữa: Nội dung
                         Column(modifier = Modifier.weight(1f).padding(8.dp)) {
                             Text(voucher.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("Đơn từ ₫${DecimalFormat("#,###").format(voucher.minOrderValue)}", fontSize = 11.sp, color = Color.Gray)

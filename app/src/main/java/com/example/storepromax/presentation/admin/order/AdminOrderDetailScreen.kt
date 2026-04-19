@@ -199,7 +199,7 @@ fun AdminOrderDetailScreen(
                                 Text("x${item.quantity}", color = Color.Gray, fontSize = 12.sp)
                             }
                             Text(
-                                "₫${formatter.format(item.totalPrice)}",
+                                "₫${formatter.format(item.snapshotTotalPrice)}",
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -226,7 +226,7 @@ fun AdminOrderDetailScreen(
                     )
                     Row {
                         Text(
-                            "Tổng cộng:",
+                            "Tổng cộng (Khách trả):",
                             modifier = Modifier.weight(1f),
                             fontWeight = FontWeight.Bold
                         )
@@ -235,6 +235,21 @@ fun AdminOrderDetailScreen(
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFD32F2F),
                             fontSize = 18.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row {
+                        Text(
+                            "Lợi nhuận gộp:",
+                            modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF2E7D32)
+                        )
+                        Text(
+                            "+ ₫${formatter.format(currentOrder.totalProfit)}",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF2E7D32),
+                            fontSize = 16.sp
                         )
                     }
                 }

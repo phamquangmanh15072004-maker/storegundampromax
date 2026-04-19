@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -175,7 +176,7 @@ fun AdminProductListScreen(
                             onEdit = { navController.navigate("add_product?productId=${product.id}") },
                             onDelete = {
                                 productToDelete = product
-                                showDeleteSingleDialog = true // Mở hộp thoại xóa đơn lẻ
+                                showDeleteSingleDialog = true
                             }
                         )
                     }
@@ -183,7 +184,6 @@ fun AdminProductListScreen(
             }
         }
 
-        // 🔥 Dialog Xóa 1 Sản phẩm
         if (showDeleteSingleDialog && productToDelete != null) {
             AlertDialog(
                 onDismissRequest = { showDeleteSingleDialog = false },
@@ -206,7 +206,6 @@ fun AdminProductListScreen(
             )
         }
 
-        // 🔥 Dialog Xóa TẤT CẢ (Mới thêm)
         if (showDeleteAllDialog) {
             AlertDialog(
                 onDismissRequest = { showDeleteAllDialog = false },
@@ -216,7 +215,7 @@ fun AdminProductListScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            viewModel.deleteAllProducts() // Gọi hàm xóa tất cả
+                            viewModel.deleteAllProducts()
                             showDeleteAllDialog = false
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
@@ -237,10 +236,15 @@ fun AdminProductItem(product: Product, onEdit: () -> Unit, onDelete: () -> Unit)
     val formatter = DecimalFormat("#,###")
     val isLowStock = product.stock < 5
 
+    val isHidden = !product.isActive
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isHidden) Color(0xFFF9FAFB) else Color(0xFFFFFFFF)
+        ),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(4.dp)
+        elevation = CardDefaults.cardElevation(if (isHidden) 1.dp else 4.dp),
+        modifier = Modifier.alpha(if (isHidden) 0.6f else 1f)
     ) {
         Row(
             modifier = Modifier
@@ -248,29 +252,47 @@ fun AdminProductItem(product: Product, onEdit: () -> Unit, onDelete: () -> Unit)
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AsyncImage(
-                model = product.imageUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.LightGray),
-                contentScale = ContentScale.Crop
-            )
+            Box(modifier = Modifier.size(80.dp)) {
+                AsyncImage(
+                    model = product.imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.LightGray),
+                    contentScale = ContentScale.Crop
+                )
+                if (isHidden) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.VisibilityOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (product.isNew) {
+                    if (product.isNewProduct() && !isHidden) {
                         Surface(color = Color.Red, shape = RoundedCornerShape(4.dp)) {
                             Text("NEW", fontSize = 8.sp, color = Color.White, modifier = Modifier.padding(horizontal = 4.dp), fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.width(6.dp))
                     }
+                    if (product.isFeatured && !isHidden) {
+                        Surface(color = Color(0xFFFF9800), shape = RoundedCornerShape(4.dp)) {
+                            Text("HOT", fontSize = 8.sp, color = Color.White, modifier = Modifier.padding(horizontal = 4.dp), fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
                     Text(
                         text = product.name,
-                        color = Color.Black,
+                        color = if (isHidden) Color.Gray else Color.Black,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -280,28 +302,36 @@ fun AdminProductItem(product: Product, onEdit: () -> Unit, onDelete: () -> Unit)
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                Text(
-                    text = "${formatter.format(product.price)} ₫",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "${formatter.format(product.price)} ₫",
+                        color = if (isHidden) Color.Gray else MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    if (isHidden) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(color = Color(0xFFEEEEEE), shape = RoundedCornerShape(4.dp)) {
+                            Text("Đang ẩn", fontSize = 10.sp, color = Color.DarkGray, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        if(isLowStock) Icons.Default.Warning else Icons.Default.Inventory,
+                        if(isLowStock && !isHidden) Icons.Default.Warning else Icons.Default.Inventory,
                         contentDescription = null,
-                        tint = if (isLowStock) Color.Red else Color.Gray,
+                        tint = if (isHidden) Color.LightGray else if (isLowStock) Color.Red else Color.Gray,
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Kho: ${product.stock} • ${product.category}",
-                        color = if (isLowStock) Color.Red else Color.Gray,
+                        text = "Kho: ${product.stock} • SKU: ${product.sku}", // Sửa lại hiện SKU thay vì Category
+                        color = if (isHidden) Color.LightGray else if (isLowStock) Color.Red else Color.Gray,
                         fontSize = 12.sp,
-                        fontWeight = if (isLowStock) FontWeight.Bold else FontWeight.Normal
+                        fontWeight = if (isLowStock && !isHidden) FontWeight.Bold else FontWeight.Normal
                     )
                 }
             }

@@ -7,6 +7,8 @@ data class Order(
     val items: List<CartItem> = emptyList(),
 
     val totalPrice: Long = 0,
+    val totalCostPrice: Long = 0,
+    val totalProfit: Long = 0,
 
     val receiverName: String = "",
     val receiverPhone: String = "",
@@ -21,11 +23,14 @@ data class Order(
     val updatedAt: Long = System.currentTimeMillis(),
     val cancelReason: String = "",
     val shippingMethod: String = "STANDARD",
+
     val discountCode: String? = null,
     val freeshipCode: String? = null,
+
     val refundBankBin: String? = null,
     val refundBankShortName: String? = null,
     val refundAccountNumber: String? = null,
     val refundAccountName: String? = null,
+    val cancelledBy: String = "",
     val refundReceiptUrl: String? = null
 )

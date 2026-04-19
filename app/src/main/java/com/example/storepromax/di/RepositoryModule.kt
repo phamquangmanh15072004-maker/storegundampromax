@@ -3,6 +3,7 @@ package com.example.storepromax.di
 import com.example.storepromax.data.repository.AuthRepositoryImpl
 import com.example.storepromax.data.repository.CartRepositoryImpl
 import com.example.storepromax.data.repository.ChatRepositoryImpl
+import com.example.storepromax.data.repository.NotificationRepositoryImpl
 import com.example.storepromax.data.repository.OrderRepositoryImpl
 import com.example.storepromax.data.repository.PostRepositoryImpl
 import com.example.storepromax.data.repository.ProductRepositoryImpl
@@ -11,6 +12,7 @@ import com.example.storepromax.data.repository.VoucherRepositoryImpl
 import com.example.storepromax.domain.repository.AuthRepository
 import com.example.storepromax.domain.repository.CartRepository
 import com.example.storepromax.domain.repository.ChatRepository
+import com.example.storepromax.domain.repository.NotificationRepository
 import com.example.storepromax.domain.repository.OrderRepository
 import com.example.storepromax.domain.repository.PostRepository
 import com.example.storepromax.domain.repository.ProductRepository
@@ -75,4 +77,9 @@ abstract class RepositoryModule {
     abstract fun bindVoucherRepository(
         voucherRepositoryImpl: VoucherRepositoryImpl
     ): VoucherRepository
+    @Binds
+    @Singleton
+    abstract fun bindNotificationRepository(
+        notificationRepository: NotificationRepositoryImpl
+    ): NotificationRepository
 }

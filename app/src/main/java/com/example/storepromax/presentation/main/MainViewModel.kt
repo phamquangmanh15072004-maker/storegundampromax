@@ -28,12 +28,12 @@ class MainViewModel @Inject constructor(
     init {
         monitorUserStatus()
     }
-    private val _scrollToTopEvent = MutableSharedFlow<Unit>()
+    private val _scrollToTopEvent = MutableSharedFlow<String>()
     val scrollToTopEvent = _scrollToTopEvent.asSharedFlow()
 
-    fun triggerScrollToTop() {
+    fun triggerScrollToTop(route: String) {
         viewModelScope.launch {
-            _scrollToTopEvent.emit(Unit)
+            _scrollToTopEvent.emit(route)
         }
     }
     fun monitorUserStatus() {

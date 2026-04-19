@@ -105,12 +105,19 @@ fun AddProductScreen(
                         onValueChange = { viewModel.name.value = it },
                         label = { Text("Tên sản phẩm") },
                         isError = viewModel.nameError.value != null,
-                        supportingText = { viewModel.nameError.value?.let { Text(it) } },
                         modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = viewModel.sku.value,
+                        onValueChange = { viewModel.sku.value = it.uppercase() },
+                        label = { Text("Mã SKU (Bắt buộc)") },
+                        isError = viewModel.skuError.value != null,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
-
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedTextField(
                             value = viewModel.price.value,
@@ -118,33 +125,42 @@ fun AddProductScreen(
                             label = { Text("Giá bán (VNĐ)") },
                             modifier = Modifier.weight(1f),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedLabelColor = Color(0xFFD32F2F),
-                                focusedBorderColor = Color(0xFFD32F2F),
-                                focusedTextColor = Color(0xFFD32F2F)
-                            )
+                            colors = OutlinedTextFieldDefaults.colors(focusedLabelColor = Color.Red, focusedBorderColor = Color.Red)
                         )
                         OutlinedTextField(
                             value = viewModel.originalPrice.value,
                             onValueChange = { if (it.all { c -> c.isDigit() }) viewModel.originalPrice.value = it },
                             label = { Text("Giá gốc (VNĐ)") },
                             modifier = Modifier.weight(1f),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            shape = RoundedCornerShape(8.dp)
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                         )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    OutlinedTextField(
-                        value = viewModel.stock.value,
-                        onValueChange = { if (it.all { c -> c.isDigit() }) viewModel.stock.value = it },
-                        label = { Text("Số lượng kho") },
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        shape = RoundedCornerShape(8.dp)
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = viewModel.stock.value,
+                            onValueChange = { if (it.all { c -> c.isDigit() }) viewModel.stock.value = it },
+                            label = { Text("Kho") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                        OutlinedTextField(
+                            value = viewModel.costPrice.value,
+                            onValueChange = { if (it.all { c -> c.isDigit() }) viewModel.costPrice.value = it },
+                            label = { Text("Giá vốn") },
+                            modifier = Modifier.weight(1.2f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                        OutlinedTextField(
+                            value = viewModel.weight.value,
+                            onValueChange = { if (it.all { c -> c.isDigit() }) viewModel.weight.value = it },
+                            label = { Text("Gram") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
                 }
                 AdminSectionCard("Phân loại") {
                     var expanded by remember { mutableStateOf(false) }
@@ -248,19 +264,16 @@ fun AddProductScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("Sản phẩm mới (New)", fontWeight = FontWeight.SemiBold)
-                            Text("Hiển thị nhãn NEW", fontSize = 12.sp, color = Color.Gray)
+                            Text("Sản phẩm HOT", fontWeight = FontWeight.SemiBold)
+                            Text("Gắn mác nổi bật thủ công", fontSize = 12.sp, color = Color.Gray)
                         }
                         Switch(
-                            checked = viewModel.isNew.value,
-                            onCheckedChange = { viewModel.isNew.value = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF4CAF50))
+                            checked = viewModel.isFeatured.value,
+                            onCheckedChange = { viewModel.isFeatured.value = it },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFFFF5252))
                         )
                     }
-
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color(0xFFF0F0F0))
-
-                    // Switch: Is Active
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -277,8 +290,6 @@ fun AddProductScreen(
                         )
                     }
                 }
-
-                // === 5. CHI TIẾT KHÁC ===
                 AdminSectionCard("Mô tả & Cấu hình") {
                     OutlinedTextField(
                         value = viewModel.description.value,
@@ -301,8 +312,6 @@ fun AddProductScreen(
 
                 Spacer(modifier = Modifier.height(60.dp))
             }
-
-            // Nút Lưu ở dưới cùng
             Button(
                 onClick = { viewModel.saveProduct() },
                 modifier = Modifier

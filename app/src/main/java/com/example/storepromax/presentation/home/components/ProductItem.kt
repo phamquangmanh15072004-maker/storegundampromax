@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.rounded.AddShoppingCart
 import androidx.compose.material3.*
@@ -17,7 +18,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -43,24 +43,15 @@ fun ProductItem(
     onAddToCart: (Offset) -> Unit
 ) {
     val isOutOfStock = remember(product.stock) { product.stock <= 0 }
+    val isNew = remember(product.createdAt) { product.isNewProduct() }
+    val isHot = remember(product.sold, product.isFeatured) { product.isHotProduct() }
+    val discountPercent = remember(product.price, product.originalPrice) { product.getDiscountPercentage() }
+
     var cartButtonOffset by remember { mutableStateOf(Offset.Zero) }
-    val discountPercent = remember(product.price, product.originalPrice) {
-        if (product.originalPrice > product.price) {
-            ((product.originalPrice - product.price) / product.originalPrice.toDouble() * 100).toInt()
-        } else 0
-    }
 
-    val formattedPrice = remember(product.price) {
-        "₫${CurrencyFormatter.format(product.price)}"
-    }
-
-    val formattedOriginalPrice = remember(product.originalPrice) {
-        "₫${CurrencyFormatter.format(product.originalPrice)}"
-    }
-
-    val formattedRating = remember(product.rating) {
-        String.format("%.1f", product.rating)
-    }
+    val formattedPrice = remember(product.price) { "₫${CurrencyFormatter.format(product.price)}" }
+    val formattedOriginalPrice = remember(product.originalPrice) { "₫${CurrencyFormatter.format(product.originalPrice)}" }
+    val formattedRating = remember(product.rating) { String.format("%.1f", product.rating) }
 
     Card(
         modifier = modifier
@@ -69,12 +60,8 @@ fun ProductItem(
             .clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 4.dp,
-            pressedElevation = 8.dp
-        )
-    ){
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp, pressedElevation = 6.dp)
+    ) {
         Column {
             Box(
                 modifier = Modifier
@@ -83,7 +70,7 @@ fun ProductItem(
             ) {
                 AsyncImage(
                     model = product.imageUrl,
-                    contentDescription = null,
+                    contentDescription = product.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -92,81 +79,63 @@ fun ProductItem(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.White.copy(alpha = 0.7f)),
+                            .background(Color.Black.copy(alpha = 0.5f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Box(
+                        Text(
+                            text = "HẾT HÀNG",
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 14.sp,
+                            letterSpacing = 1.5.sp,
                             modifier = Modifier
-                                .background(Color.Black, CircleShape)
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Text(
-                                "SOLD OUT",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 10.sp
-                            )
-                        }
+                                .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
                     }
-                }
-                if (discountPercent > 0 && !isOutOfStock) {
-                    Surface(
+                } else {
+                    Column(
                         modifier = Modifier
-                            .padding(8.dp)
-                            .align(Alignment.TopStart),
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color.Transparent
+                            .align(Alignment.TopStart)
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    brush = Brush.horizontalGradient(
-                                        colors = listOf(
-                                            Color(
-                                                0xFFFF512F
-                                            ), Color(0xFFDD2476)
-                                        )
+                        if (discountPercent > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        brush = Brush.horizontalGradient(listOf(Color(0xFFFF3D00), Color(0xFFFF8F00))),
+                                        shape = RoundedCornerShape(topStart = 8.dp, bottomEnd = 8.dp, topEnd = 2.dp, bottomStart = 2.dp)
                                     )
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "-$discountPercent%",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold
                                 )
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                "-$discountPercent%",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            }
                         }
-                    }
-                }
-                if (product.isNew && !isOutOfStock) {
-                    Surface(
-                        modifier = Modifier
-                            .padding(8.dp)
-                            .align(Alignment.TopEnd),
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color.Transparent
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    brush = Brush.linearGradient(
-                                        colors = listOf(
-                                            Color(
-                                                0xFF00B4DB
-                                            ), Color(0xFF0083B0)
-                                        )
-                                    )
-                                )
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                "NEW",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
+                        if (isHot) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .background(Color(0xFFE53935), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("HOT", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else if (isNew) {
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFF00ACC1), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("NEW", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -182,66 +151,79 @@ fun ProductItem(
                     maxLines = 2,
                     minLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (isOutOfStock) Color.LightGray else Color(0xFF333333),
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isOutOfStock) Color.Gray else Color(0xFF1F2937),
                     modifier = Modifier.height(40.dp)
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        Icons.Default.Star,
-                        null,
-                        tint = if (isOutOfStock) Color.LightGray else Color(0xFFFFC107),
-                        modifier = Modifier.size(14.dp)
+                        imageVector = Icons.Default.Star,
+                        contentDescription = null,
+                        tint = if (isOutOfStock) Color.LightGray else Color(0xFFFFB300),
+                        modifier = Modifier.size(12.dp)
                     )
-                    Spacer(modifier = Modifier.width(2.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = formattedRating,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.Gray
+                        color = Color(0xFF4B5563)
                     )
-                    Text(text = " (${product.sold})", fontSize = 11.sp, color = Color.LightGray)
+                    Text(
+                        text = " • Đã bán ${if (product.sold > 999) "999+" else product.sold}",
+                        fontSize = 10.sp,
+                        color = Color(0xFF9CA3AF)
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = formattedOriginalPrice,
-                            fontSize = 11.sp,
-                            color = Color.Gray,
-                            textDecoration = TextDecoration.LineThrough,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        if (discountPercent > 0) {
+                            Text(
+                                text = formattedOriginalPrice,
+                                fontSize = 10.sp,
+                                color = Color(0xFF9CA3AF),
+                                textDecoration = TextDecoration.LineThrough,
+                                maxLines = 1
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.height(14.dp))
+                        }
                         Text(
                             text = formattedPrice,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 17.sp,
-                            color = if (isOutOfStock) Color.Gray else Color(0xFFE91E63),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = if (isOutOfStock) Color.Gray else Color(0xFFE53935), // Màu đỏ thương mại
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+
                     if (!isOutOfStock) {
                         Box(
                             modifier = Modifier
-                                .size(30.dp)
+                                .size(32.dp)
                                 .onGloballyPositioned { coordinates ->
                                     cartButtonOffset = coordinates.positionInRoot()
                                 }
-                                .background(Color(0xFF212121), CircleShape)
+                                .background(Color(0xFFF3F4F6), CircleShape)
                                 .clip(CircleShape)
                                 .clickable { onAddToCart(cartButtonOffset) },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.AddShoppingCart,
-                                contentDescription = "Add to cart",
-                                tint = Color.White,
+                                contentDescription = "Thêm vào giỏ",
+                                tint = Color(0xFF1F2937),
                                 modifier = Modifier.size(16.dp)
                             )
                         }

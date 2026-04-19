@@ -32,10 +32,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Product
-import com.example.storepromax.presentation.feed.toVietnameseCurrency
 import getDateHeader
 import getRelativeTime
-import kotlin.collections.isNotEmpty
+import java.text.DecimalFormat
+
+private val CurrencyFormatter = DecimalFormat("#,###")
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -73,7 +74,7 @@ fun RecentlyViewedScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         },
-        containerColor = Color(0xFFF5F7FA) 
+        containerColor = Color(0xFFF5F7FA)
     ) { padding ->
         if (recentProducts.isEmpty()) {
             EmptyHistoryView()
@@ -147,10 +148,17 @@ fun HistoryProductItemNew(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
+                } else if (product.imageUrl.isNotEmpty()) {
+                    AsyncImage(
+                        model = product.imageUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
                 } else {
                     Icon(Icons.Default.Image, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(40.dp))
                 }
-                if (product.isNew) {
+                if (product.isNewProduct()) {
                     Surface(
                         color = Color(0xFF4CAF50),
                         shape = RoundedCornerShape(bottomEnd = 8.dp),
@@ -158,6 +166,21 @@ fun HistoryProductItemNew(
                     ) {
                         Text(
                             text = "NEW",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                if (product.isHotProduct() && !product.isNewProduct()) {
+                    Surface(
+                        color = Color(0xFFFF3B30),
+                        shape = RoundedCornerShape(bottomEnd = 8.dp),
+                        modifier = Modifier.align(Alignment.TopStart)
+                    ) {
+                        Text(
+                            text = "HOT",
                             color = Color.White,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -207,7 +230,7 @@ fun HistoryProductItemNew(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${product.price / 1000}k",
+                        text = "₫${CurrencyFormatter.format(product.price)}",
                         color = Color(0xFFFF424F),
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 16.sp

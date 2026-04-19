@@ -1,12 +1,6 @@
 package com.example.storepromax.presentation.cart
 
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,7 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ConfirmationNumber
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.LocalShipping
@@ -484,38 +477,40 @@ fun CartItemRow(
     onQuantityChange: (Int) -> Unit
 ) {
     val formatter = DecimalFormat("#,###")
-
+    val isAvailable = item.product.isActive
     Surface(
-        color = Color.White,
+        color = if (isAvailable) Color.White else Color(0xFFF9FAFB),
         shape = RoundedCornerShape(8.dp),
-        shadowElevation = 0.5.dp, // Đổ bóng nhẹ nhàng hơn
+        shadowElevation = 0.5.dp,
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
     ) {
         Row(
-            // 🌟 2. GIẢM PADDING TRONG TỪ 12dp -> 8dp
-            modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 8.dp, end = 8.dp).fillMaxWidth(),
+            modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 8.dp, end = 8.dp).fillMaxWidth()
+                .alpha(if (isAvailable) 1f else 0.5f),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 🌟 3. THU NHỎ CHECKBOX NHƯ SHOPEE
             Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
                 Checkbox(
-                    checked = item.isSelected,
-                    onCheckedChange = { onToggle() },
+                    checked = item.isSelected && isAvailable,
+                    onCheckedChange = { if (isAvailable) onToggle() },
+                    enabled = isAvailable,
                     colors = CheckboxDefaults.colors(checkedColor = GunplaBlue, uncheckedColor = Color.LightGray),
-                    modifier = Modifier.scale(0.85f) // Bóp nhỏ checkbox lại 15%
+                    modifier = Modifier.scale(0.85f)
                 )
             }
-
-            AsyncImage(
-                model = item.product.imageUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(80.dp)
-                    .border(0.5.dp, BorderGray, RoundedCornerShape(4.dp))
-                    .clip(RoundedCornerShape(4.dp)),
-                contentScale = ContentScale.Crop
-            )
-
+            Box(modifier = Modifier.size(80.dp)) {
+                AsyncImage(
+                    model = item.product.imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize().border(0.5.dp, BorderGray, RoundedCornerShape(4.dp)).clip(RoundedCornerShape(4.dp)),
+                    contentScale = ContentScale.Crop
+                )
+                if (!isAvailable) {
+                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
+                        Text("NGỪNG BÁN", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    }
+                }
+            }
             Spacer(modifier = Modifier.width(10.dp))
 
             Column(
@@ -540,18 +535,20 @@ fun CartItemRow(
                         price = item.product.price,
                         modifier = Modifier.weight(1f).padding(end = 6.dp)
                     )
-                    Row(
-                        modifier = Modifier
-                            .height(26.dp)
-                            .border(0.5.dp, BorderGray, RoundedCornerShape(4.dp))
-                            .clip(RoundedCornerShape(4.dp)),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        QuantityBtn(Icons.Default.Remove, item.quantity > 1, onDecrease)
-                        Box(modifier = Modifier.width(0.5.dp).fillMaxHeight().background(BorderGray))
-                        InlineQuantityInput(item.quantity, item.product.stock, onQuantityChange)
-                        Box(modifier = Modifier.width(0.5.dp).fillMaxHeight().background(BorderGray))
-                        QuantityBtn(Icons.Default.Add, item.quantity < item.product.stock, onIncrease)
+                    if (isAvailable) {
+                        Row(
+                            modifier = Modifier
+                                .height(26.dp)
+                                .border(0.5.dp, BorderGray, RoundedCornerShape(4.dp))
+                                .clip(RoundedCornerShape(4.dp)),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            QuantityBtn(Icons.Default.Remove, item.quantity > 1, onDecrease)
+                            Box(modifier = Modifier.width(0.5.dp).fillMaxHeight().background(BorderGray))
+                            InlineQuantityInput(item.quantity, item.product.stock, onQuantityChange)
+                            Box(modifier = Modifier.width(0.5.dp).fillMaxHeight().background(BorderGray))
+                            QuantityBtn(Icons.Default.Add, item.quantity < item.product.stock, onIncrease)
+                        }
                     }
                 }
             }

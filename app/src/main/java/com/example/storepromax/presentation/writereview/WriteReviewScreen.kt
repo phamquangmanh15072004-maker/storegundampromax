@@ -1,4 +1,4 @@
-package com.example.storepromax.feature.product_detail.components
+package com.example.storepromax.presentation.writereview
 
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult

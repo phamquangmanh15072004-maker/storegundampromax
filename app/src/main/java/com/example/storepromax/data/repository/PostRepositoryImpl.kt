@@ -301,7 +301,7 @@ class PostRepositoryImpl @Inject constructor(
     }
     override fun getProcessedPosts(): Flow<List<Post>> = callbackFlow {
         val listener = firestore.collection("posts")
-            .whereIn("status", listOf("APPROVED", "REJECTED"))
+            .whereIn("status", listOf("APPROVED", "REJECTED", "HIDDEN"))
             .orderBy("processedAt", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {

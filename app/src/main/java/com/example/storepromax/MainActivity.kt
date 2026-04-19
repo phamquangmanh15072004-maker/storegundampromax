@@ -25,7 +25,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.cloudinary.android.MediaManager
-import com.example.storepromax.feature.product_detail.components.WriteReviewScreen
 import com.example.storepromax.presentation.admin.AdminDashboardScreen
 import com.example.storepromax.presentation.admin.AdminStatsScreen
 import com.example.storepromax.presentation.admin.chat.AdminChatListScreen
@@ -63,6 +62,7 @@ import com.example.storepromax.presentation.register.RegisterScreen
 import com.example.storepromax.presentation.search.SearchScreen
 import com.example.storepromax.presentation.welcome.WelcomeScreen
 import com.example.storepromax.presentation.wishlist.WishlistScreen
+import com.example.storepromax.presentation.writereview.WriteReviewScreen
 import com.example.storepromax.presentation.writereview.WriteReviewViewModel
 import com.example.storepromax.ui.theme.StorePromaxTheme
 import com.google.firebase.auth.FirebaseAuth
@@ -102,7 +102,17 @@ class MainActivity : ComponentActivity() {
                                 when (data.type) {
                                     "ORDER_UPDATE" -> {
                                         if (!data.orderId.isNullOrEmpty()) {
-                                            navController.navigate("order_detail/${data.orderId}")
+                                          navController.navigate("order_history_screen/0") {
+                                                launchSingleTop = true
+                                            }
+                                        }
+                                    }
+
+                                    "NEW_ORDER" -> {
+                                        if (!data.orderId.isNullOrEmpty()) {
+                                            navController.navigate("admin_order_detail/${data.orderId}") {
+                                                launchSingleTop = true
+                                            }
                                         }
                                     }
 
@@ -233,9 +243,8 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable("admin_order") { AdminOrderScreen(navController = navController) }
-
                     composable(
-                        route = Screen.AdminOrderDetail.route,
+                        route = "admin_order_detail/{orderId}",
                         arguments = listOf(navArgument("orderId") { type = NavType.StringType })
                     ) { backStackEntry ->
                         val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
@@ -300,18 +309,33 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable(
-                        route = "checkout_screen?discountCode={discountCode}&freeshipCode={freeshipCode}",
+                        // 🌟 1. Cập nhật route để nhận cả 4 biến
+                        route = "checkout_screen?discountCode={discountCode}&freeshipCode={freeshipCode}&productId={productId}&quantity={quantity}",
                         arguments = listOf(
                             navArgument("discountCode") { type = NavType.StringType; defaultValue = "" },
-                            navArgument("freeshipCode") { type = NavType.StringType; defaultValue = "" }
+                            navArgument("freeshipCode") { type = NavType.StringType; defaultValue = "" },
+                            // 🌟 2. Thêm 2 argument mới
+                            navArgument("productId") {
+                                type = NavType.StringType
+                                nullable = true
+                                defaultValue = null
+                            },
+                            navArgument("quantity") {
+                                type = NavType.IntType
+                                defaultValue = 1
+                            }
                         )
                     ) { backStackEntry ->
                         val dCode = backStackEntry.arguments?.getString("discountCode")
                         val fCode = backStackEntry.arguments?.getString("freeshipCode")
+                        val productId = backStackEntry.arguments?.getString("productId")
+                        val quantity = backStackEntry.arguments?.getInt("quantity") ?: 1
                         CheckoutScreen(
                             navController = navController,
                             discountCode = dCode,
-                            freeshipCode = fCode
+                            freeshipCode = fCode,
+                            productId = productId,
+                            quantity = quantity
                         )
                     }
                     composable(
@@ -415,6 +439,19 @@ class MainActivity : ComponentActivity() {
                     composable("edit_post/{postId}") { backStackEntry ->
                         val postId = backStackEntry.arguments?.getString("postId")
                         CreatePostScreen(navController = navController, postId = postId)
+                    }
+                    composable(
+                        route = "order_history_screen/{tabIndex}",
+                        arguments = listOf(navArgument("tabIndex") {
+                            type = NavType.IntType
+                            defaultValue = 0
+                        })
+                    ) { backStackEntry ->
+                        val tabIndex = backStackEntry.arguments?.getInt("tabIndex") ?: 0
+                        OrderHistoryScreen(
+                            navController = navController,
+                            initialTabIndex = tabIndex
+                        )
                     }
                 }
             }

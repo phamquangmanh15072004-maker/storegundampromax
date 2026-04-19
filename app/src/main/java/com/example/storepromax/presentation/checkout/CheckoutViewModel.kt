@@ -1,9 +1,8 @@
 package com.example.storepromax.presentation.checkout
 
-import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.storepromax.admin.utils.NotificationHelper
 import com.example.storepromax.data.api.BackendRetrofit
 import com.example.storepromax.data.api.GHNRetrofit
 import com.example.storepromax.domain.model.CartItem
@@ -16,12 +15,12 @@ import com.example.storepromax.domain.model.Voucher
 import com.example.storepromax.domain.model.WardGHN
 import com.example.storepromax.domain.repository.AuthRepository
 import com.example.storepromax.domain.repository.CartRepository
+import com.example.storepromax.domain.repository.NotificationRepository
 import com.example.storepromax.domain.repository.OrderRepository
 import com.example.storepromax.domain.repository.ProductRepository
 import com.example.storepromax.domain.repository.VoucherRepository
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -35,8 +34,8 @@ class CheckoutViewModel @Inject constructor(
     private val orderRepository: OrderRepository,
     private val productRepository: ProductRepository,
     private val voucherRepository: VoucherRepository,
-    private val auth: FirebaseAuth,
-    @ApplicationContext private val context: Context
+    private val notificationRepository: NotificationRepository,
+    private val auth: FirebaseAuth
 ) : ViewModel() {
 
     private var isBuyNowMode = false
@@ -58,7 +57,7 @@ class CheckoutViewModel @Inject constructor(
     val shippingFee = _shippingFee.asStateFlow()
 
     private val MY_SHOP_ID = 6359956
-    val totalPrice: StateFlow<Long> = _displayItems.map { list -> list.sumOf { it.totalPrice } }
+    val totalPrice: StateFlow<Long> = _displayItems.map { list -> list.sumOf { it.liveTotalPrice } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
     val productDiscountAmount: StateFlow<Long> = combine(totalPrice, _selectedDiscountVoucher) { total, v ->
@@ -81,11 +80,13 @@ class CheckoutViewModel @Inject constructor(
     ) { sub, ship, prodDisc, shipDisc ->
         ((sub - prodDisc) + (ship - shipDisc)).coerceAtLeast(0L)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
     private var paymentListenerJob: Job? = null
     val name = MutableStateFlow("")
     val phone = MutableStateFlow("")
     val specificAddress = MutableStateFlow("")
     val paymentMethod = MutableStateFlow("COD")
+
     private val _provinces = MutableStateFlow<List<ProvinceGHN>>(emptyList())
     val provinces = _provinces.asStateFlow()
 
@@ -124,18 +125,20 @@ class CheckoutViewModel @Inject constructor(
             }
         }
     }
+
     private fun listenToOrderPaymentStatus(orderId: String, totalAmount: Double) {
         paymentListenerJob?.cancel()
         paymentListenerJob = viewModelScope.launch {
             orderRepository.getOrderById(orderId).collect { order ->
                 if (order != null && order.paymentStatus == "PAID") {
                     _uiEvent.send("PAYMENT_SUCCESS")
-                    NotificationHelper.sendOrderNotificationToAdmin(context, orderId, totalAmount)
+                    notificationRepository.sendOrderNotificationToAdmin(orderId, totalAmount)
                     paymentListenerJob?.cancel()
                 }
             }
         }
     }
+
     private suspend fun fetchProvincesFromGHN() {
         try {
             val response = GHNRetrofit.api.getProvinces()
@@ -144,6 +147,7 @@ class CheckoutViewModel @Inject constructor(
             }
         } catch (e: Exception) { e.printStackTrace() }
     }
+
     fun cancelOrderFromPopup(orderId: String) {
         viewModelScope.launch {
             paymentListenerJob?.cancel()
@@ -156,10 +160,10 @@ class CheckoutViewModel @Inject constructor(
                 accountNumber = null,
                 accountName = null
             )
-
             _uiEvent.send("Đã hủy đơn hàng để đặt lại!")
         }
     }
+
     fun onProvinceSelected(p: ProvinceGHN) {
         selectedProvince.value = p
         selectedDistrict.value = null
@@ -298,7 +302,8 @@ class CheckoutViewModel @Inject constructor(
         }
     }
 
-    fun submitOrder(onSuccess: () -> Unit, onShowPaymentPopup: (String, String, String, String, String) -> Unit) {        val userId = auth.currentUser?.uid ?: ""
+    fun submitOrder(onSuccess: () -> Unit, onShowPaymentPopup: (String, String, String, String, String) -> Unit) {
+        val userId = auth.currentUser?.uid ?: ""
         val address = getFullAddress()
 
         if (name.value.isBlank() || phone.value.isBlank() || selectedProvince.value == null || selectedDistrict.value == null || selectedWard.value == null || specificAddress.value.isBlank()) {
@@ -312,6 +317,7 @@ class CheckoutViewModel @Inject constructor(
             val orderId = System.currentTimeMillis().toString().takeLast(9)
             val dCode = _selectedDiscountVoucher.value?.code?.takeIf { it.isNotBlank() }
             val fCode = _selectedFreeshipVoucher.value?.code?.takeIf { it.isNotBlank() }
+
             val newOrder = Order(
                 id = orderId,
                 userId = userId,
@@ -322,8 +328,7 @@ class CheckoutViewModel @Inject constructor(
                 address = address,
                 paymentMethod = paymentMethod.value,
                 shippingMethod = shippingMethod.value,
-                //paymentStatus = "UNPAID",
-                paymentStatus = if (paymentMethod.value == "BANKING") "PAID" else "UNPAID",
+                paymentStatus = "UNPAID",
                 status = "PENDING",
                 createdAt = System.currentTimeMillis(),
                 discountCode = dCode,
@@ -334,31 +339,32 @@ class CheckoutViewModel @Inject constructor(
                 if (!isBuyNowMode) {
                     _displayItems.value.forEach { cartRepository.removeFromCart(it.product.id) }
                 }
+
                 if (paymentMethod.value == "BANKING") {
-//                    try {
-//                        val response = BackendRetrofit.api.createPaymentLink(
-//                            PaymentRequest(orderId, finalTotal, "Thanh toan don $orderId")
-//                        )
-//                        if (response.isSuccessful && response.body()?.success == true) {
-//                            val body = response.body()!!
-//                            onShowPaymentPopup(
-//                                body.checkoutUrl ?: "",
-//                                body.bin ?: "",
-//                                body.accountNumber ?: "",
-//                                body.description ?: "",
-//                                orderId
-//                            )
-//                            listenToOrderPaymentStatus(orderId, finalTotal.toDouble())
-//                        } else {
-//                            val errorMsg = response.errorBody()?.string() ?: response.message()
-//                            _uiEvent.send("Server PayOS từ chối: $errorMsg")
-//                        }
-//                    }catch (e: Exception){
-//                        _uiEvent.send("Lỗi kết nối Server thanh toán: ${e.message}")
-//                    }
-                    onSuccess()
+                    try {
+                        val response = BackendRetrofit.api.createPaymentLink(
+                            PaymentRequest(orderId, finalTotal, "Thanh toan don $orderId")
+                        )
+                        if (response.isSuccessful && response.body()?.success == true) {
+                            val body = response.body()!!
+                            onShowPaymentPopup(
+                                body.checkoutUrl ?: "",
+                                body.bin ?: "",
+                                body.accountNumber ?: "",
+                                body.description ?: "",
+                                orderId
+                            )
+                            listenToOrderPaymentStatus(orderId, finalTotal.toDouble())
+                        } else {
+                            val errorMsg = response.errorBody()?.string() ?: response.message()
+                            _uiEvent.send("Server PayOS từ chối: $errorMsg")
+                        }
+                    } catch (e: Exception){
+                        _uiEvent.send("Lỗi kết nối Server thanh toán: ${e.message}")
+                    }
                 } else {
-                    NotificationHelper.sendOrderNotificationToAdmin(context, orderId, finalTotal.toDouble())
+                    notificationRepository.sendOrderNotificationToAdmin(orderId, finalTotal.toDouble())
+                    Log.d("DEBUG_NOTIF", "Bắt đầu gọi hàm gửi thông báo cho Admin!")
                     onSuccess()
                 }
 
@@ -369,6 +375,7 @@ class CheckoutViewModel @Inject constructor(
             _isProcessing.value = false
         }
     }
+
     fun loadSelectedCartItems() {
         isBuyNowMode = false
         viewModelScope.launch {

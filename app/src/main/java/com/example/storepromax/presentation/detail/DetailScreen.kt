@@ -66,10 +66,8 @@ fun DetailScreen(
 
     val wishlistIds by wishlistViewModel.wishlistIds.collectAsState()
     val isFavorite = product != null && wishlistIds.contains(product.id)
-
-    val hasPurchased by viewModel.hasPurchased
     val relatedProducts by viewModel.relatedProducts
-
+    var reviewIdToDelete by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val averageRating by viewModel.averageRating
     val totalRatings by viewModel.totalRatingsCount
@@ -118,9 +116,13 @@ fun DetailScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TechTag(text = product.category, color = GunplaBlue)
-                        if (product.isNew) {
+                        if (product.isNewProduct()) {
                             Spacer(modifier = Modifier.width(8.dp))
                             TechTag(text = "NEW", color = WarningYellow, textColor = Color.Black)
+                        }
+                        if (product.isHotProduct()) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            TechTag(text = "HOT 🔥", color = GunplaRed, textColor = Color.White)
                         }
                         Spacer(modifier = Modifier.weight(1f))
                         Icon(Icons.Filled.Star, contentDescription = null, tint = WarningYellow, modifier = Modifier.size(20.dp))
@@ -138,14 +140,48 @@ fun DetailScreen(
                         lineHeight = 28.sp
                     )
 
+                    if (product.sku.isNotEmpty()) {
+                        Text(text = "SKU: ${product.sku}", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 4.dp))
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
+
+                    if (product.stock in 1..5) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFFFF3E0), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Color(0xFFFF9800), modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sắp cháy hàng! Chỉ còn đúng ${product.stock} hộp.", color = Color(0xFFE65100), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+
+                    if (!product.isActive) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFFFEBEE), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Block, contentDescription = null, tint = GunplaRed, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sản phẩm này đã ngừng kinh doanh.", color = GunplaRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
 
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
                             text = "₫${CurrencyFormatter.format(product.price)}",
                             fontSize = 26.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = GunplaRed
+                            color = if (product.isActive) GunplaRed else Color.Gray
                         )
                         if (product.originalPrice > product.price) {
                             Spacer(modifier = Modifier.width(10.dp))
@@ -157,9 +193,11 @@ fun DetailScreen(
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
-                            val percent = ((product.originalPrice - product.price) / product.originalPrice.toDouble() * 100).toInt()
-                            Surface(color = GunplaRed.copy(alpha = 0.1f), shape = RoundedCornerShape(4.dp)) {
-                                Text("-$percent%", color = GunplaRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            val percent = product.getDiscountPercentage()
+                            if (percent > 0) {
+                                Surface(color = GunplaRed.copy(alpha = 0.1f), shape = RoundedCornerShape(4.dp)) {
+                                    Text("-$percent%", color = GunplaRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
                             }
                         }
                     }
@@ -202,8 +240,10 @@ fun DetailScreen(
                         reviews = reviews,
                         currentUserRating = userRating,
                         isReadOnly = true,
-                        onCommentSubmit = { _, _, _ -> },
-                        onDeleteComment = { viewModel.deleteComment(it) },
+                        onCommentSubmit = { content, parentId, rating ->
+                            viewModel.submitComment(content, parentId, rating)
+                        },
+                        onDeleteComment = { reviewId -> reviewIdToDelete = reviewId },
                         onEditComment = { id, content -> viewModel.editComment(id, content) }
                     )
                 }
@@ -253,10 +293,31 @@ fun DetailScreen(
                             showAddToCartSheet = false
                             navController.navigate("checkout_screen?productId=${product.id}&quantity=$quantity")
                         } else {
-                            viewModel.addToCart(quantity)
+                            viewModel.addToCart(quantity) { success, msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
                             showAddToCartSheet = false
-                            Toast.makeText(context, "Đã thêm vào giỏ hàng!", Toast.LENGTH_SHORT).show()
                         }
+                    }
+                )
+            }
+            if (reviewIdToDelete != null) {
+                AlertDialog(
+                    onDismissRequest = { reviewIdToDelete = null },
+                    containerColor = Color.White,
+                    title = { Text("Xác nhận xóa", fontWeight = FontWeight.Bold) },
+                    text = { Text("Bạn có chắc chắn muốn xóa bình luận này không? Hành động này không thể hoàn tác.") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                viewModel.deleteComment(reviewIdToDelete!!)
+                                reviewIdToDelete = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = GunplaRed)
+                        ) { Text("Xóa") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { reviewIdToDelete = null }) { Text("Hủy", color = Color.Gray) }
                     }
                 )
             }
@@ -423,7 +484,7 @@ fun TechSpecsSection(product: Product) {
         Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
 
         TechRow("Thể Loại", product.category)
-        TechRow("Tình Trạng", if (product.isNew) "New Sealed" else "Standard")
+        TechRow("Tình Trạng", if (product.isNewProduct()) "Hàng Mới" else "Tiêu chuẩn")
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -469,7 +530,14 @@ fun BottomActionButtons(
     onAddToCart: () -> Unit,
     onBuyNow: () -> Unit
 ) {
-    val isAvailable = product.stock > 0
+    val isAvailable = product.stock > 0 && product.isActive
+
+    val buttonText = when {
+        !product.isActive -> "NGỪNG KINH DOANH"
+        product.stock <= 0 -> "HẾT HÀNG"
+        else -> "MUA NGAY"
+    }
+
     Surface(
         shadowElevation = 16.dp,
         color = Color.White
@@ -486,9 +554,10 @@ fun BottomActionButtons(
                 modifier = Modifier.size(50.dp),
                 shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, primaryColor),
-                contentPadding = PaddingValues(0.dp)
+                contentPadding = PaddingValues(0.dp),
+                enabled = isAvailable
             ) {
-                Icon(Icons.Default.ShoppingCart, contentDescription = null, tint = primaryColor)
+                Icon(Icons.Default.ShoppingCart, contentDescription = null, tint = if (isAvailable) primaryColor else Color.Gray)
             }
 
             Spacer(modifier = Modifier.width(16.dp))
@@ -504,7 +573,7 @@ fun BottomActionButtons(
                 )
             ) {
                 Text(
-                    text = if (isAvailable) "MUA NGAY" else "HẾT HÀNG",
+                    text = buttonText,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White

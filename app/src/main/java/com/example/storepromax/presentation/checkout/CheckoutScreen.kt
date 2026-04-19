@@ -87,8 +87,13 @@ fun CheckoutScreen(
     val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(productId, quantity, discountCode, freeshipCode) {
-        if (productId != null && quantity != null) viewModel.loadSingleProductForCheckout(productId, quantity)
-        else viewModel.loadSelectedCartItems()
+        val isBuyNow = !productId.isNullOrBlank() && productId != "{productId}"
+
+        if (isBuyNow && quantity != null && quantity > 0) {
+            viewModel.loadSingleProductForCheckout(productId!!, quantity)
+        } else {
+            viewModel.loadSelectedCartItems()
+        }
         viewModel.setInitialVouchers(discountCode, freeshipCode)
     }
 
@@ -205,7 +210,7 @@ fun CheckoutScreen(
                             Text("${item.quantity}x", color = GunplaBlue, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             Spacer(Modifier.width(12.dp))
                             Text(item.product.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
-                            Text("₫${DecimalFormat("#,###").format(item.totalPrice)}", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("₫${DecimalFormat("#,###").format(item.liveTotalPrice)}", fontWeight = FontWeight.Medium, fontSize = 14.sp)
                         }
                         if (index != selectedItems.lastIndex) HorizontalDivider(color = Color(0xFFEEEEEE), modifier = Modifier.padding(vertical = 8.dp))
                     }

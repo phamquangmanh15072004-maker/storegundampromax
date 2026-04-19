@@ -1,14 +1,18 @@
 package com.example.storepromax.data.repository
 
+import android.util.Log
+import com.example.storepromax.domain.model.CartItem
 import com.example.storepromax.domain.model.Order
 import com.example.storepromax.domain.repository.OrderRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 class OrderRepositoryImpl @Inject constructor(
@@ -27,7 +31,9 @@ class OrderRepositoryImpl @Inject constructor(
         val subscription = firestore.collection("orders")
             .whereEqualTo("userId", userId)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) { close(error); return@addSnapshotListener }
+                if (error != null) {
+                    close(error); return@addSnapshotListener
+                }
                 val orders = snapshot?.documents?.mapNotNull { doc ->
                     doc.toObject(Order::class.java)?.copy(id = doc.id)
                 }?.sortedByDescending { it.createdAt } ?: emptyList()
@@ -42,12 +48,15 @@ class OrderRepositoryImpl @Inject constructor(
         freeshipCode: String?
     ): Result<String> {
         return try {
-            var newOrderId = ""
             suspend fun getGlobalVoucherRef(code: String): com.google.firebase.firestore.DocumentReference? {
                 return firestore.collection("vouchers").whereEqualTo("code", code).get().await()
                     .documents.firstOrNull()?.reference
             }
-            suspend fun getUserVoucherRef(code: String, userId: String): com.google.firebase.firestore.DocumentReference? {
+
+            suspend fun getUserVoucherRef(
+                code: String,
+                userId: String
+            ): com.google.firebase.firestore.DocumentReference? {
                 return firestore.collection("user_vouchers")
                     .whereEqualTo("userId", userId)
                     .whereEqualTo("voucher.code", code)
@@ -61,8 +70,7 @@ class OrderRepositoryImpl @Inject constructor(
 
             val globalFreeshipRef = if (!freeshipCode.isNullOrBlank()) getGlobalVoucherRef(freeshipCode) else null
             val userFreeshipRef = if (!freeshipCode.isNullOrBlank()) getUserVoucherRef(freeshipCode, order.userId) else null
-
-            firestore.runTransaction { transaction ->
+            val savedOrderId = firestore.runTransaction { transaction ->
                 val productRefs = order.items.map { item ->
                     val docRef = firestore.collection("products").document(item.product.id)
                     val snapshot = transaction.get(docRef)
@@ -72,11 +80,24 @@ class OrderRepositoryImpl @Inject constructor(
                 val globalDiscountSnap = globalDiscountRef?.let { transaction.get(it) }
                 val globalFreeshipSnap = globalFreeshipRef?.let { transaction.get(it) }
 
+                var calculatedTotalCost = 0L
+                val finalItems = mutableListOf<CartItem>()
+
                 for ((item, _, snapshot) in productRefs) {
                     val realPrice = snapshot.getLong("price") ?: 0L
-                    if (realPrice != item.product.price) throw Exception("Giá sản phẩm đã đổi, vui lòng load lại!")
+                    val realCostPrice = snapshot.getLong("costPrice") ?: 0L
                     val stock = snapshot.getLong("stock") ?: 0L
+
+                    if (realPrice != item.product.price) throw Exception("Giá sản phẩm '${item.product.name}' đã đổi, vui lòng load lại!")
                     if (stock < item.quantity) throw Exception("Sản phẩm '${item.product.name}' đã hết hàng!")
+
+                    calculatedTotalCost += (realCostPrice * item.quantity)
+
+                    val frozenItem = item.copy(
+                        purchasedPrice = realPrice,
+                        costPriceAtPurchase = realCostPrice
+                    )
+                    finalItems.add(frozenItem)
                 }
 
                 globalDiscountSnap?.let { snap ->
@@ -98,7 +119,6 @@ class OrderRepositoryImpl @Inject constructor(
                     throw Exception("Bạn đã sử dụng mã Freeship này hoặc mã không còn hiệu lực!")
                 }
 
-
                 for ((item, docRef, _) in productRefs) {
                     transaction.update(docRef, "stock", FieldValue.increment(-item.quantity.toLong()))
                     transaction.update(docRef, "sold", FieldValue.increment(item.quantity.toLong()))
@@ -106,21 +126,27 @@ class OrderRepositoryImpl @Inject constructor(
 
                 globalDiscountRef?.let { transaction.update(it, "usedCount", FieldValue.increment(1)) }
                 globalFreeshipRef?.let { transaction.update(it, "usedCount", FieldValue.increment(1)) }
-
                 userDiscountRef?.let { transaction.update(it, "status", "USED") }
                 userFreeshipRef?.let { transaction.update(it, "status", "USED") }
 
-                val orderRef = firestore.collection("orders").document(order.id)
-                newOrderId = order.id
-                transaction.set(orderRef, order)
+                val finalOrder = order.copy(
+                    items = finalItems,
+                    totalCostPrice = calculatedTotalCost,
+                    totalProfit = order.totalPrice - calculatedTotalCost
+                )
 
+                val orderRef = firestore.collection("orders").document(order.id)
+                transaction.set(orderRef, finalOrder)
+
+                return@runTransaction finalOrder.id
             }.await()
 
-            Result.success(newOrderId)
+            Result.success(savedOrderId)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
     override suspend fun cancelOrder(
         orderId: String,
         reason: String,
@@ -130,59 +156,60 @@ class OrderRepositoryImpl @Inject constructor(
         accountNumber: String?,
         accountName: String?
     ) {
-        try {
-            val orderRef = firestore.collection("orders").document(orderId)
-            val orderSnapshot = orderRef.get().await()
-            val order = orderSnapshot.toObject(Order::class.java) ?: return
+        withContext(Dispatchers.IO) {
+            try {
+                val orderSnapshot = firestore.collection("orders").document(orderId).get().await()
+                if (!orderSnapshot.exists()) return@withContext
 
-            var globalDiscountRef: com.google.firebase.firestore.DocumentReference? = null
-            var userDiscountRef: com.google.firebase.firestore.DocumentReference? = null
-            var globalFreeshipRef: com.google.firebase.firestore.DocumentReference? = null
-            var userFreeshipRef: com.google.firebase.firestore.DocumentReference? = null
+                val items = orderSnapshot.get("items") as? List<Map<String, Any>> ?: emptyList()
 
-            order.discountCode?.let { code ->
-                globalDiscountRef = firestore.collection("vouchers").whereEqualTo("code", code).get().await().documents.firstOrNull()?.reference
-                userDiscountRef = firestore.collection("user_vouchers")
-                    .whereEqualTo("userId", order.userId)
-                    .whereEqualTo("voucher.code", code)
-                    .get().await().documents.firstOrNull()?.reference
-            }
-            order.freeshipCode?.let { code ->
-                globalFreeshipRef = firestore.collection("vouchers").whereEqualTo("code", code).get().await().documents.firstOrNull()?.reference
-                userFreeshipRef = firestore.collection("user_vouchers")
-                    .whereEqualTo("userId", order.userId)
-                    .whereEqualTo("voucher.code", code)
-                    .get().await().documents.firstOrNull()?.reference
-            }
+                val batch = firestore.batch()
+                val orderRef = firestore.collection("orders").document(orderId)
+                val updates = mutableMapOf<String, Any>(
+                    "status" to if (isPaid) "REFUNDING" else "CANCELLED",
+                    "cancelReason" to reason,
+                    "cancelledBy" to "USER",
+                    "updatedAt" to System.currentTimeMillis()
+                )
 
-            firestore.runTransaction { transaction ->
-                val currentOrderSnap = transaction.get(orderRef)
-                val currentOrder = currentOrderSnap.toObject(Order::class.java)
-                if (currentOrder != null && currentOrder.status == "PENDING") {
-                    val newStatus = if (isPaid) "REFUNDING" else "CANCELLED"
-
-                    transaction.update(orderRef, "status", newStatus)
-                    transaction.update(orderRef, "cancelReason", reason)
-                    if (isPaid) {
-                        transaction.update(orderRef, "refundBankBin", bankBin)
-                        transaction.update(orderRef, "refundBankShortName", bankShortName)
-                        transaction.update(orderRef, "refundAccountNumber", accountNumber)
-                        transaction.update(orderRef, "refundAccountName", accountName)
-                    }
-                    for (item in currentOrder.items) {
-                        val productRef = firestore.collection("products").document(item.product.id)
-                        transaction.update(productRef, "stock", FieldValue.increment(item.quantity.toLong()))
-                        transaction.update(productRef, "sold", FieldValue.increment(-item.quantity.toLong()))
-                    }
-                    globalDiscountRef?.let { transaction.update(it, "usedCount", FieldValue.increment(-1)) }
-                    userDiscountRef?.let { transaction.update(it, "status", "AVAILABLE") }
-                    globalFreeshipRef?.let { transaction.update(it, "usedCount", FieldValue.increment(-1)) }
-                    userFreeshipRef?.let { transaction.update(it, "status", "AVAILABLE") }
+                if (isPaid) {
+                    bankBin?.let { updates["refundBankBin"] = it }
+                    bankShortName?.let { updates["refundBankShortName"] = it }
+                    accountNumber?.let { updates["refundAccountNumber"] = it }
+                    accountName?.let { updates["refundAccountName"] = it }
                 }
-            }.await()
+                batch.update(orderRef, updates)
 
-        } catch (e: Exception) {
-            e.printStackTrace()
+                // Trả lại kho
+                for (item in items) {
+                    val productMap = item["product"] as? Map<String, Any>
+                    val productId = productMap?.get("id") as? String
+                    val quantity = (item["quantity"] as? Number)?.toLong() ?: 1L
+
+                    if (productId != null) {
+                        val productRef = firestore.collection("products").document(productId)
+                        batch.update(productRef, "stock", FieldValue.increment(quantity))
+                    }
+                }
+                val adminNotifRef = firestore.collection("notifications").document()
+                val adminNotifData = hashMapOf(
+                    "title" to "Khách hàng đã hủy đơn ❌",
+                    "message" to "Đơn hàng #${orderId.takeLast(6).uppercase()} vừa bị khách tự hủy. Lý do: $reason",
+                    "type" to "ORDER",
+                    "targetId" to orderId,
+                    "targetRoles" to listOf("ADMIN", "INVENTORY"),
+                    "readBy" to emptyList<String>(),
+                    "createdAt" to System.currentTimeMillis()
+                )
+                batch.set(adminNotifRef, adminNotifData)
+
+                batch.commit().await()
+                Log.d("OrderRepository", "Đã hủy đơn, hoàn kho và ghi chuông Admin thành công!")
+
+            } catch (e: Exception) {
+                Log.e("OrderRepository", "Lỗi hủy đơn: ${e.message}")
+                throw e
+            }
         }
     }
 
@@ -190,7 +217,9 @@ class OrderRepositoryImpl @Inject constructor(
         val subscription = firestore.collection("orders")
             .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) { close(error); return@addSnapshotListener }
+                if (error != null) {
+                    close(error); return@addSnapshotListener
+                }
                 val orders = snapshot?.documents?.mapNotNull { doc ->
                     doc.toObject(Order::class.java)?.copy(id = doc.id)
                 } ?: emptyList()
@@ -211,15 +240,23 @@ class OrderRepositoryImpl @Inject constructor(
     override fun getOrderById(orderId: String): Flow<Order?> = callbackFlow {
         val docRef = firestore.collection("orders").document(orderId)
         val subscription = docRef.addSnapshotListener { snapshot, error ->
-            if (error != null) { close(error); return@addSnapshotListener }
+            if (error != null) {
+                close(error); return@addSnapshotListener
+            }
             if (snapshot != null && snapshot.exists()) {
                 val order = snapshot.toObject(Order::class.java)?.copy(id = snapshot.id)
                 trySend(order)
-            } else { trySend(null) }
+            } else {
+                trySend(null)
+            }
         }
         awaitClose { subscription.remove() }
     }
-    override suspend fun confirmRefundWithReceipt(orderId: String, receiptUrl: String): Result<Boolean> {
+
+    override suspend fun confirmRefundWithReceipt(
+        orderId: String,
+        receiptUrl: String
+    ): Result<Boolean> {
         return try {
             firestore.collection("orders").document(orderId)
                 .update(

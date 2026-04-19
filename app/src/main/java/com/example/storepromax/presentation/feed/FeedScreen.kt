@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Post
@@ -48,7 +49,6 @@ import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
-
 
 fun Long.toVietnameseCurrency(): String {
     return when {
@@ -77,29 +77,29 @@ fun FeedScreen(
     navController: NavController,
     viewModel: FeedViewModel = hiltViewModel()
 ) {
-    val posts by viewModel.posts.collectAsState()
+    val posts by viewModel.posts.collectAsStateWithLifecycle()
     val currentUserId = viewModel.currentUserId
 
     var showImageDialog by remember { mutableStateOf(false) }
     var selectedImageUrl by remember { mutableStateOf("") }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var postToDelete by remember { mutableStateOf<Post?>(null) }
-    val searchQuery by viewModel.searchQuery.collectAsState()
+
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     var isSearchActive by remember { mutableStateOf(false) }
-    val isSearching by viewModel.isSearching.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val context = LocalContext.current
+    val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+
     val listState = rememberLazyListState()
     val isFabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
-    val mainViewModel: MainViewModel = hiltViewModel(context as androidx.activity.ComponentActivity)
+
+    val mainViewModel: MainViewModel = hiltViewModel()
+
     LaunchedEffect(Unit) {
         mainViewModel.scrollToTopEvent.collect {
             listState.animateScrollToItem(0)
         }
-    }
-    LaunchedEffect(Unit) {
-        viewModel.loadInitialFeed()
     }
 
     Scaffold(
@@ -162,7 +162,9 @@ fun FeedScreen(
                 modifier = Modifier.fillMaxSize().padding(padding)
             ) {
                 if (isRefreshing && posts.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF0D47A1)) }
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFF0D47A1))
+                    }
                 } else if (posts.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -184,7 +186,7 @@ fun FeedScreen(
                                 post = post,
                                 currentUserId = currentUserId,
                                 onDeleteClick = { postToDelete = post; showDeleteConfirmDialog = true },
-                                onLikeClick = { viewModel.toggleLike(post.id, context) },
+                                onLikeClick = { viewModel.toggleLike(post.id) },
                                 onImageClick = { url -> selectedImageUrl = url; showImageDialog = true },
                                 onUserClick = { userId -> navController.navigate("profile_detail/$userId") },
                                 onCommentClick = { post.id.let { postId -> navController.navigate("post_detail/$postId") } }
@@ -199,17 +201,30 @@ fun FeedScreen(
                 }
             }
         }
+
+        // Dialog Xóa
         if (showDeleteConfirmDialog && postToDelete != null) {
             AlertDialog(
                 onDismissRequest = { showDeleteConfirmDialog = false },
                 title = { Text("Xóa bài viết?") },
                 text = { Text("Bạn có chắc chắn muốn xóa bài viết \"${postToDelete?.title}\" không?") },
                 confirmButton = {
-                    Button(onClick = { postToDelete?.let { viewModel.deletePost(it.id) }; showDeleteConfirmDialog = false; postToDelete = null }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) { Text("Xóa ngay") }
+                    Button(
+                        onClick = {
+                            postToDelete?.let { viewModel.deletePost(it.id) }
+                            showDeleteConfirmDialog = false
+                            postToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) { Text("Xóa ngay") }
                 },
-                dismissButton = { TextButton(onClick = { showDeleteConfirmDialog = false }) { Text("Hủy", color = Color.Gray) } }
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirmDialog = false }) { Text("Hủy", color = Color.Gray) }
+                }
             )
         }
+
+        // Dialog Ảnh
         if (showImageDialog && selectedImageUrl.isNotEmpty()) {
             ImagePreviewDialog(imageUrl = selectedImageUrl) { showImageDialog = false }
         }
@@ -228,6 +243,7 @@ fun FeedPostItem(
 ) {
     val isOwner = post.userId == currentUserId
     val isLiked = post.likedByUsers.contains(currentUserId)
+
     val heartColor by animateColorAsState(targetValue = if (isLiked) Color(0xFFD32F2F) else Color.Gray, label = "color")
     val heartScale by animateFloatAsState(
         targetValue = if (isLiked) 1.2f else 1f,
@@ -235,6 +251,7 @@ fun FeedPostItem(
         label = "scale"
     )
     val explosionAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+
     LaunchedEffect(isLiked) {
         if (isLiked) {
             explosionAnim.snapTo(0f)
@@ -244,127 +261,169 @@ fun FeedPostItem(
             )
         }
     }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(2.dp),
         shape = RoundedCornerShape(0.dp),
         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
     ) {
-        Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().clickable { onUserClick(post.userId) }.padding(horizontal = 16.dp)
-            ) {
-                AsyncImage(
-                    model = post.userAvatar.takeIf { it.isNotBlank() } ?: "https://ui-avatars.com/api/?name=${post.userName}",
-                    contentDescription = "Avatar",
-                    modifier = Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFEEEEEE)),
-                    contentScale = ContentScale.Crop
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(post.userName.ifBlank { "Thành viên ẩn danh" }, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.Black)
-                    Text(post.createdAt.toRelativeTime(), color = Color.Gray, fontSize = 12.sp)
-                }
-                if (isOwner) {
-                    IconButton(onClick = onDeleteClick, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Xóa", tint = Color.Gray)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text(post.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-
-                Row(modifier = Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(post.price.toVietnameseCurrency(), color = Color(0xFFD32F2F), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    val (condText, condBg, condTextCol) = when (post.condition) {
-                        "NEW" -> Triple("Mới", Color(0xFFE8F5E9), Color(0xFF2E7D32))
-                        "LIKE NEW" -> Triple("Như mới", Color(0xFFE3F2FD), Color(0xFF1565C0))
-                        "USED" -> Triple("Đã ráp", Color(0xFFFFF3E0), Color(0xFFEF6C00))
-                        "JUNK" -> Triple("Xác/Junk", Color(0xFFFFEBEE), Color(0xFFC62828))
-                        else -> Triple(post.condition, Color(0xFFF5F5F5), Color.DarkGray)
-                    }
-
-                    Surface(color = condBg, shape = RoundedCornerShape(4.dp)) {
-                        Text(condText, fontSize = 10.sp, color = condTextCol, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Surface(color = Color(0xFFF3E5F5), shape = RoundedCornerShape(4.dp)) {
-                        Text("Grade: ${post.grade}", fontSize = 10.sp, color = Color(0xFF6A1B9A), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                    }
-                }
-
-                Text(post.content, fontSize = 14.sp, color = Color(0xFF444444), maxLines = 3, overflow = TextOverflow.Ellipsis, lineHeight = 20.sp)
-            }
-            if (post.images.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                PostImageCarousel(images = post.images, onImageClick = onImageClick)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Divider(color = Color(0xFFF0F0F0), thickness = 0.5.dp, modifier = Modifier.padding(horizontal = 16.dp))
-
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        // 🔥 BỌC TOÀN BỘ BẰNG BOX ĐỂ XỬ LÝ LỚP PHỦ MỜ (HIDDEN)
+        Box {
+            // -- NỘI DUNG CHÍNH CỦA BÀI VIẾT --
+            Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
+                // Header (Avatar, Tên, Xóa)
                 Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onLikeClick() }
-                        .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                    modifier = Modifier.fillMaxWidth().clickable { onUserClick(post.userId) }.padding(horizontal = 16.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        if (explosionAnim.value > 0f && explosionAnim.value < 1f) {
-                            val numParticles = 6
-                            val radius = 45.dp.value * explosionAnim.value
-                            for (i in 0 until numParticles) {
-                                val angle = (i * (360 / numParticles)) * (Math.PI / 180)
-                                val offsetX = (radius * kotlin.math.cos(angle)).dp
-                                val offsetY = (radius * kotlin.math.sin(angle)).dp
-                                val alpha = 1f - explosionAnim.value
-                                Icon(
-                                    imageVector = Icons.Default.Favorite,
-                                    contentDescription = null,
-                                    tint = Color(0xFFD32F2F).copy(alpha = alpha),
-                                    modifier = Modifier
-                                        .offset(offsetX, offsetY)
-                                        .size(14.dp)
-                                        .scale(1f - explosionAnim.value)
-                                )
-                            }
+                    AsyncImage(
+                        model = post.userAvatar.takeIf { it.isNotBlank() } ?: "https://ui-avatars.com/api/?name=${post.userName}",
+                        contentDescription = "Avatar",
+                        modifier = Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFEEEEEE)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(post.userName.ifBlank { "Thành viên ẩn danh" }, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.Black)
+                        Text(post.createdAt.toRelativeTime(), color = Color.Gray, fontSize = 12.sp)
+                    }
+                    if (isOwner) {
+                        IconButton(onClick = onDeleteClick, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Xóa", tint = Color.Gray)
                         }
-                        Icon(
-                            imageVector = if (isLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                            contentDescription = "Like",
-                            tint = heartColor,
-                            modifier = Modifier
-                                .size(24.dp)
-                                .scale(heartScale)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Content (Tiêu đề, Giá, Tags, Mô tả)
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Text(post.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+
+                    Row(modifier = Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(post.price.toVietnameseCurrency(), color = Color(0xFFD32F2F), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        val (condText, condBg, condTextCol) = when (post.condition) {
+                            "NEW" -> Triple("Mới", Color(0xFFE8F5E9), Color(0xFF2E7D32))
+                            "LIKE NEW" -> Triple("Như mới", Color(0xFFE3F2FD), Color(0xFF1565C0))
+                            "USED" -> Triple("Đã ráp", Color(0xFFFFF3E0), Color(0xFFEF6C00))
+                            "JUNK" -> Triple("Xác/Junk", Color(0xFFFFEBEE), Color(0xFFC62828))
+                            else -> Triple(post.condition, Color(0xFFF5F5F5), Color.DarkGray)
+                        }
+
+                        Surface(color = condBg, shape = RoundedCornerShape(4.dp)) {
+                            Text(condText, fontSize = 10.sp, color = condTextCol, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(color = Color(0xFFF3E5F5), shape = RoundedCornerShape(4.dp)) {
+                            Text("Grade: ${post.grade}", fontSize = 10.sp, color = Color(0xFF6A1B9A), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                        }
+                    }
+
+                    Text(post.content, fontSize = 14.sp, color = Color(0xFF444444), maxLines = 3, overflow = TextOverflow.Ellipsis, lineHeight = 20.sp)
+                }
+
+                // Hình ảnh
+                if (post.images.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    PostImageCarousel(images = post.images, onImageClick = onImageClick)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Divider(color = Color(0xFFF0F0F0), thickness = 0.5.dp, modifier = Modifier.padding(horizontal = 16.dp))
+
+                // Footer (Like & Comment)
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onLikeClick() }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            if (explosionAnim.value > 0f && explosionAnim.value < 1f) {
+                                val numParticles = 6
+                                val radius = 45.dp.value * explosionAnim.value
+                                for (i in 0 until numParticles) {
+                                    val angle = (i * (360 / numParticles)) * (Math.PI / 180)
+                                    val offsetX = (radius * kotlin.math.cos(angle)).dp
+                                    val offsetY = (radius * kotlin.math.sin(angle)).dp
+                                    val alpha = 1f - explosionAnim.value
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = null,
+                                        tint = Color(0xFFD32F2F).copy(alpha = alpha),
+                                        modifier = Modifier
+                                            .offset(offsetX, offsetY)
+                                            .size(14.dp)
+                                            .scale(1f - explosionAnim.value)
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = if (isLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                                contentDescription = "Like",
+                                tint = heartColor,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .scale(heartScale)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (post.likeCount > 0) "${post.likeCount}" else "Thích",
+                            fontSize = 14.sp,
+                            color = if (isLiked) Color(0xFFD32F2F) else Color.Gray,
+                            fontWeight = if (isLiked) FontWeight.Bold else FontWeight.Medium
                         )
                     }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (post.likeCount > 0) "${post.likeCount}" else "Thích",
-                        fontSize = 14.sp,
-                        color = if (isLiked) Color(0xFFD32F2F) else Color.Gray,
-                        fontWeight = if (isLiked) FontWeight.Bold else FontWeight.Medium
-                    )
+                    Row(
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable { onCommentClick() }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Outlined.Chat, contentDescription = "Comment", tint = Color.Gray, modifier = Modifier.size(22.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = if (post.commentCount > 0) "${post.commentCount}" else "Bình luận", fontSize = 14.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+                    }
                 }
-                Row(
-                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable { onCommentClick() }.padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center
+            }
+
+            // 🔥 LỚP KÍNH MỜ (OVERLAY) CHẶN TƯƠNG TÁC NẾU BÀI BỊ ẨN
+            if (post.status == "HIDDEN") {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(Color.White.copy(alpha = 0.85f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { /* KHÔNG LÀM GÌ ĐỂ CHẶN CLICK */ },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Outlined.Chat, contentDescription = "Comment", tint = Color.Gray, modifier = Modifier.size(22.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = if (post.commentCount > 0) "${post.commentCount}" else "Bình luận", fontSize = 14.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.VisibilityOff,
+                            contentDescription = "Bị ẩn",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Bài viết đã bị Admin ẩn",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.DarkGray,
+                            fontSize = 16.sp
+                        )
+                    }
                 }
             }
         }
     }
 }
+
 @Composable
 fun ImagePreviewDialog(imageUrl: String, onDismiss: () -> Unit) {
     Dialog(

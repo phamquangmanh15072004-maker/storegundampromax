@@ -44,9 +44,6 @@ class DetailViewModel @Inject constructor(
     val currentUserId: String
         get() = auth.currentUser?.uid ?: ""
 
-    private val _hasPurchased = mutableStateOf(false)
-    val hasPurchased: State<Boolean> = _hasPurchased
-
     private val _relatedProducts = mutableStateOf<List<Product>>(emptyList())
     val relatedProducts: State<List<Product>> = _relatedProducts
     private val currentProductId: String
@@ -61,27 +58,45 @@ class DetailViewModel @Inject constructor(
     private fun getProductDetail(productId: String) {
         viewModelScope.launch {
             _isLoading.value = true
-            firestore.collection("products").document(productId)
-                .get()
-                .addOnSuccessListener { document ->
-                    val product = document.toObject<Product>()
+            productRepository.getProductById(productId)
+                .onSuccess { product ->
                     _state.value = product
                     _isLoading.value = false
-                    if (product != null) {
-                        saveToHistory(product)
-                        loadRelatedProducts(product.category, product.id)
-                    }
+                    saveToHistory(product)
+                    loadRelatedProducts(product.category, product.id)
                 }
-                .addOnFailureListener {
+                .onFailure {
                     _isLoading.value = false
+                    Log.e("DetailViewModel", "Lỗi tải sản phẩm: ${it.message}")
                 }
+        }
+    }
+
+    fun addToCart(quantity: Int, onResult: (Boolean, String) -> Unit) {
+        val currentProduct = _state.value
+        if (currentProduct != null) {
+            viewModelScope.launch {
+                val result = cartRepository.addToCart(currentProduct, quantity)
+                if (result.isSuccess) {
+                    onResult(true, "Đã thêm vào giỏ hàng!")
+                } else {
+                    onResult(false, result.exceptionOrNull()?.message ?: "Lỗi thêm giỏ hàng")
+                }
+            }
         }
     }
     private fun loadRelatedProducts(category: String, currentProductId: String) {
         viewModelScope.launch {
+            Log.d("DetailViewModel", "Đang tìm SP tương tự cho category: $category")
+
             productRepository.getProductsPaginated(10, null, category, "createdAt", false, null, null)
                 .onSuccess { pair ->
-                    _relatedProducts.value = pair.first.filter { it.id != currentProductId }
+                    val filteredList = pair.first.filter { it.id != currentProductId }
+                    _relatedProducts.value = filteredList
+                    Log.d("DetailViewModel", "Tìm thấy ${filteredList.size} SP tương tự!")
+                }
+                .onFailure {
+                    Log.e("DetailViewModel", "LỖI tải SP tương tự: ${it.message}")
                 }
         }
     }
@@ -160,15 +175,6 @@ class DetailViewModel @Inject constructor(
         viewModelScope.launch {
             reviewRepository.updateReview(currentProductId, reviewId, newContent)
             loadReviews(currentProductId)
-        }
-    }
-
-    fun addToCart(quantity: Int) {
-        val currentProduct = _state.value
-        if (currentProduct != null) {
-            viewModelScope.launch {
-                cartRepository.addToCart(currentProduct,quantity)
-            }
         }
     }
 }

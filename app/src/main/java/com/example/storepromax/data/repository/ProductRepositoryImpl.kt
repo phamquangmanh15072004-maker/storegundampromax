@@ -45,37 +45,30 @@ class ProductRepositoryImpl @Inject constructor(
     override suspend fun addProduct(product: Product): Result<Boolean> {
         return try {
             val docRef = firestore.collection("products").document()
-
             val productMap = hashMapOf(
                 "id" to docRef.id,
+                "sku" to product.sku,
                 "name" to product.name,
                 "name_lowercase" to product.name.lowercase(),
                 "price" to product.price,
                 "originalPrice" to product.originalPrice,
+                "costPrice" to product.costPrice,
                 "description" to product.description,
                 "images" to product.images,
                 "imageUrl" to (product.images.firstOrNull() ?: ""),
                 "stock" to product.stock,
+                "weight" to product.weight,
                 "category" to product.category,
-                "isNew" to product.isNew,
+                "isFeatured" to product.isFeatured,
                 "isActive" to product.isActive,
                 "model3DUrl" to product.model3DUrl,
                 "has3D" to !product.model3DUrl.isNullOrBlank(),
                 "sold" to 0,
                 "rating" to 0.0,
-                "createdAt" to System.currentTimeMillis()
+                "createdAt" to System.currentTimeMillis(),
+                "updatedAt" to System.currentTimeMillis()
             )
-
             docRef.set(productMap).await()
-            Result.success(true)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    override suspend fun deleteProduct(productId: String): Result<Boolean> {
-        return try {
-            firestore.collection("products").document(productId).delete().await()
             Result.success(true)
         } catch (e: Exception) {
             Result.failure(e)
@@ -87,25 +80,37 @@ class ProductRepositoryImpl @Inject constructor(
             val docRef = firestore.collection("products").document(product.id)
             val productMap = hashMapOf(
                 "id" to product.id,
+                "sku" to product.sku,
                 "name" to product.name,
                 "name_lowercase" to product.name.lowercase(),
                 "price" to product.price,
                 "originalPrice" to product.originalPrice,
+                "costPrice" to product.costPrice,
                 "description" to product.description,
                 "images" to product.images,
                 "imageUrl" to (product.images.firstOrNull() ?: ""),
                 "stock" to product.stock,
+                "weight" to product.weight,
                 "category" to product.category,
-                "isNew" to product.isNew,
+                "isFeatured" to product.isFeatured,
                 "isActive" to product.isActive,
                 "model3DUrl" to product.model3DUrl,
                 "has3D" to !product.model3DUrl.isNullOrBlank(),
                 "sold" to product.sold,
                 "rating" to product.rating,
+                "createdAt" to product.createdAt,
                 "updatedAt" to System.currentTimeMillis()
             )
-
             docRef.set(productMap).await()
+            Result.success(true)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun deleteProduct(productId: String): Result<Boolean> {
+        return try {
+            firestore.collection("products").document(productId).delete().await()
             Result.success(true)
         } catch (e: Exception) {
             Result.failure(e)
@@ -189,42 +194,22 @@ class ProductRepositoryImpl @Inject constructor(
             }
         }
     }
-
     override suspend fun searchProducts(query: String): Result<List<Product>> {
         return try {
-            val snapshot = firestore.collection("products").get().await()
-            val allProducts = snapshot.toObjects(Product::class.java)
+            val snapshot = firestore.collection("products")
+                .whereEqualTo("isActive", true)
+                .get().await()
 
+            val allProducts = snapshot.toObjects(Product::class.java)
             val filteredProducts = allProducts.filter { product ->
                 product.name.contains(query, ignoreCase = true)
             }
-
             Result.success(filteredProducts)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    override suspend fun syncLowercaseNames(): Result<Boolean> {
-        return try {
-            val snapshot = firestore.collection("products").get().await()
-            val batch = firestore.batch()
-
-            for (document in snapshot.documents) {
-                val name = document.getString("name") ?: ""
-                batch.update(document.reference, "name_lowercase", name.lowercase())
-            }
-
-            batch.commit().await()
-            Result.success(true)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    override suspend fun clearViewHistory() {
-        historyDao.clearHistory()
-    }
     override suspend fun getProductsPaginated(
         limit: Long,
         lastDocument: DocumentSnapshot?,
@@ -236,6 +221,8 @@ class ProductRepositoryImpl @Inject constructor(
     ): Result<Pair<List<Product>, DocumentSnapshot?>> {
         return try {
             var query: Query = firestore.collection("products")
+            query = query.whereEqualTo("isActive", true)
+
             if (category == "3D Model") {
                 query = query.whereEqualTo("has3D", true)
             } else if (category != "All") {
@@ -267,6 +254,27 @@ class ProductRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override suspend fun syncLowercaseNames(): Result<Boolean> {
+        return try {
+            val snapshot = firestore.collection("products").get().await()
+            val batch = firestore.batch()
+
+            for (document in snapshot.documents) {
+                val name = document.getString("name") ?: ""
+                batch.update(document.reference, "name_lowercase", name.lowercase())
+            }
+
+            batch.commit().await()
+            Result.success(true)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun clearViewHistory() {
+        historyDao.clearHistory()
     }
     override suspend fun getProductReviews(productId: String): Result<List<ProductReview>> {
         return try {

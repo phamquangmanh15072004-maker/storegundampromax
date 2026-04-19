@@ -44,17 +44,22 @@ class CartRepositoryImpl @Inject constructor(
                         if (productMap != null) {
                             val product = Product(
                                 id = productMap["id"] as? String ?: "",
+                                sku = productMap["sku"] as? String ?: "",
                                 name = productMap["name"] as? String ?: "",
                                 description = productMap["description"] as? String ?: "",
                                 price = (productMap["price"] as? Number)?.toLong() ?: 0L,
                                 originalPrice = (productMap["originalPrice"] as? Number)?.toLong() ?: 0L,
+                                costPrice = (productMap["costPrice"] as? Number)?.toLong() ?: 0L,
                                 stock = (productMap["stock"] as? Number)?.toInt() ?: 0,
-                                isNew = productMap["isNew"] as? Boolean ?: false,
+                                weight = (productMap["weight"] as? Number)?.toInt() ?: 0,
                                 isActive = productMap["isActive"] as? Boolean ?: true,
+                                isFeatured = productMap["isFeatured"] as? Boolean ?: false,
                                 imageUrl = productMap["imageUrl"] as? String ?: "",
                                 category = productMap["category"] as? String ?: "",
                                 rating = (productMap["rating"] as? Number)?.toDouble() ?: 0.0,
                                 sold = (productMap["sold"] as? Number)?.toInt() ?: 0,
+                                createdAt = (productMap["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis(), // 🌟 MỚI
+                                updatedAt = (productMap["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis(), // 🌟 MỚI
                                 model3DUrl = productMap["model3DUrl"] as? String ?: ""
                             )
                             CartItem(
@@ -158,15 +163,5 @@ class CartRepositoryImpl @Inject constructor(
             batch.delete(doc.reference)
         }
         batch.commit().await()
-    }
-
-    override suspend fun decreaseStock(productId: String, quantity: Int) {
-        try {
-            firestore.collection("products").document(productId)
-                .update("stock", FieldValue.increment(-quantity.toLong()))
-                .await()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
     }
 }

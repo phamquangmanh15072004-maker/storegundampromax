@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,7 +37,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Comment
-import com.example.storepromax.domain.utils.formatVietnameseCurrency // Nhớ giữ hàm format của bạn
+import com.example.storepromax.domain.utils.formatVietnameseCurrency
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -146,9 +147,13 @@ fun PostDetailScreen(
                                     } else {
                                         val finalContent = if (replyingToCommentId.isNotEmpty()) { "@$replyingToUserName $commentText" } else { commentText }
                                         viewModel.sendComment(
-                                            context = context, postId = postId, content = finalContent,
-                                            parentId = replyingToCommentId, replyingToUserId = replyingToUserId, replyingToName = replyingToUserName
+                                            postId = postId,
+                                            content = finalContent,
+                                            parentId = replyingToCommentId,
+                                            replyingToUserId = replyingToUserId,
+                                            replyingToName = replyingToUserName
                                         ) { Toast.makeText(context, "Đã gửi bình luận!", Toast.LENGTH_SHORT).show() }
+
                                         commentText = ""
                                         replyingToCommentId = ""
                                         replyingToUserName = ""
@@ -181,11 +186,10 @@ fun PostDetailScreen(
                                 AsyncImage(
                                     model = p.images[page],
                                     contentDescription = "Post Image",
-                                    contentScale = ContentScale.Fit, // Fit để xem full ảnh gundam
+                                    contentScale = ContentScale.Fit,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
-                            // Đếm số ảnh
                             if (p.images.size > 1) {
                                 Box(
                                     modifier = Modifier
@@ -236,7 +240,7 @@ fun PostDetailScreen(
                             Spacer(modifier = Modifier.height(16.dp))
                             Divider(color = Color(0xFFEEEEEE))
                             Spacer(modifier = Modifier.height(16.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 AsyncImage(
                                     model = p.userAvatar.takeIf { it.isNotBlank() } ?: "https://ui-avatars.com/api/?name=${p.userName}",
                                     contentDescription = "Avatar",
@@ -244,10 +248,27 @@ fun PostDetailScreen(
                                     contentScale = ContentScale.Crop
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Column {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(p.userName, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                     val dateString = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(p.createdAt))
                                     Text(dateString, color = Color.Gray, fontSize = 12.sp)
+                                }
+                                if (p.userId != currentUserId) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            viewModel.contactSeller(p) { channelId ->
+                                                navController.navigate("chat_screen/$channelId")
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(20.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF0D47A1)),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        modifier = Modifier.height(36.dp)
+                                    ) {
+                                        Icon(Icons.Outlined.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Chat", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
                                 }
                             }
 

@@ -31,26 +31,37 @@ class CartViewModel @Inject constructor(
     val selectedFreeshipVoucher = _selectedFreeshipVoucher.asStateFlow()
 
     val subTotal: StateFlow<Long> = cartItems.map { list ->
-        list.filter { it.isSelected }.sumOf { it.totalPrice }
+        list.filter { it.isSelected && it.product.isActive }.sumOf { it.liveTotalPrice }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    fun toggleSelection(item: CartItem) {
+        if (!item.product.isActive) return
+
+        viewModelScope.launch {
+            cartRepository.updateSelection(item.product.id, !item.isSelected)
+            checkVoucherValidity()
+        }
+    }
 
     val shippingFee: StateFlow<Long> = subTotal.map { if (it > 0) 30000L else 0L }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
-    val productDiscountAmount: StateFlow<Long> = combine(subTotal, selectedDiscountVoucher) { currentSub, voucher ->
-        if (voucher == null || currentSub < voucher.minOrderValue) return@combine 0L
-        if (voucher.discountType == "FIXED") {
-            voucher.discountValue
-        } else {
-            val calc = (currentSub * voucher.discountValue) / 100
-            if (voucher.maxDiscount != null && calc > voucher.maxDiscount) voucher.maxDiscount else calc
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+    val productDiscountAmount: StateFlow<Long> =
+        combine(subTotal, selectedDiscountVoucher) { currentSub, voucher ->
+            if (voucher == null || currentSub < voucher.minOrderValue) return@combine 0L
+            if (voucher.discountType == "FIXED") {
+                voucher.discountValue
+            } else {
+                val calc = (currentSub * voucher.discountValue) / 100
+                if (voucher.maxDiscount != null && calc > voucher.maxDiscount) voucher.maxDiscount else calc
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
-    val freeshipAmount: StateFlow<Long> = combine(shippingFee, selectedFreeshipVoucher) { fee, voucher ->
-        if (voucher == null || fee == 0L) return@combine 0L
-        minOf(fee, voucher.discountValue)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+    val freeshipAmount: StateFlow<Long> =
+        combine(shippingFee, selectedFreeshipVoucher) { fee, voucher ->
+            if (voucher == null || fee == 0L) return@combine 0L
+            minOf(fee, voucher.discountValue)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
     val totalPrice: StateFlow<Long> = combine(
         subTotal, shippingFee, productDiscountAmount, freeshipAmount
@@ -63,7 +74,8 @@ class CartViewModel @Inject constructor(
     }
 
     fun fetchAvailableVouchers() {
-        val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+        val currentUserId =
+            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
         if (currentUserId.isEmpty()) return
 
         viewModelScope.launch {
@@ -122,13 +134,6 @@ class CartViewModel @Inject constructor(
     fun removeVoucher(type: String) {
         if (type == "FREESHIP") _selectedFreeshipVoucher.value = null
         else _selectedDiscountVoucher.value = null
-    }
-
-    fun toggleSelection(item: CartItem) {
-        viewModelScope.launch {
-            cartRepository.updateSelection(item.product.id, !item.isSelected)
-            checkVoucherValidity()
-        }
     }
 
     fun increaseQuantity(item: CartItem) {

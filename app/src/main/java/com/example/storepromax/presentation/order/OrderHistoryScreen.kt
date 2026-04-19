@@ -364,7 +364,7 @@ fun OrderItem(
                         Text("x${item.quantity}", fontSize = 13.sp, color = Color.Gray)
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "₫${formatter.format(item.totalPrice)}", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "₫${formatter.format(item.snapshotTotalPrice)}", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 }
             }
 
@@ -432,6 +432,24 @@ fun OrderItem(
                             modifier = Modifier.height(36.dp)
                         ) {
                             Text("Hủy Đơn Hàng", fontSize = 13.sp)
+                        }
+                    }
+                }
+                if (order.status == "DELIVERED") {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        OutlinedButton(
+                            onClick = {
+                                // Xử lý logic khiếu nại ở đây (Ví dụ: Mở Dialog cho khách nhập lý do / chụp ảnh hàng lỗi)
+                                // Hoặc đơn giản nhất: Chuyển hướng thẳng vào màn hình Chat với Admin kèm mã đơn hàng
+                                // navController.navigate("chat_screen?orderId=${order.id}")
+                            },
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, Color(0xFFE65100)), // Màu cam cảnh báo
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE65100)),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Text("Yêu cầu Trả hàng / Hoàn tiền", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

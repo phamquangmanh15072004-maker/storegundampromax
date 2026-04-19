@@ -18,5 +18,6 @@ data class Voucher(
     val expirationDate: Long = 0L,
     @get:PropertyName("isActive")
     @set:PropertyName("isActive")
-    var isActive: Boolean = true
+    var isActive: Boolean = true,
+    val startDate:Long = 0L
 )

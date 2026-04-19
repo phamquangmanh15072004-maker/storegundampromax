@@ -34,11 +34,9 @@ class HomeViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading = _isLoading.asStateFlow()
 
-    // 🌟 STATE CHO PULL-TO-REFRESH
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing = _isRefreshing.asStateFlow()
 
-    // 🌟 STATE CHO LOAD MORE DƯỚI ĐÁY MÀN HÌNH
     private val _isPaginating = MutableStateFlow(false)
     val isPaginating = _isPaginating.asStateFlow()
 
@@ -159,8 +157,16 @@ class HomeViewModel @Inject constructor(
 
     private fun loadGlobalNewArrivals() {
         viewModelScope.launch {
-            productRepository.getProductsPaginated(20, null, "All").onSuccess { (list, _) ->
-                _newArrivals.value = list.filter { it.isNew }
+            val sevenDaysAgo = System.currentTimeMillis() - (7L * 24 * 60 * 60 * 1000)
+
+            productRepository.getProductsPaginated(
+                limit = 20,
+                lastDocument = null,
+                category = "All",
+                sortBy = "createdAt",
+                isAscending = false
+            ).onSuccess { (list, _) ->
+                _newArrivals.value = list.filter { it.isNewProduct() }
             }
         }
     }

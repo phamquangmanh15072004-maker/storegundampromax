@@ -1,6 +1,7 @@
 package com.example.storepromax.presentation.home
 
 import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
@@ -53,6 +54,7 @@ import com.example.storepromax.presentation.admin.notification.NotificationViewM
 import com.example.storepromax.presentation.home.components.ProductItem
 import com.example.storepromax.presentation.navigation.Screen
 import com.example.storepromax.feature.product_detail.components.VoucherHomeSection
+import com.example.storepromax.presentation.main.MainViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -79,8 +81,6 @@ fun HomeScreen(
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     var productToAddToCart by remember { mutableStateOf<Product?>(null) }
 
-    val gridState = rememberLazyGridState()
-    val coroutineScope = rememberCoroutineScope()
 
     val currentSortBy by viewModel.currentSortBy.collectAsState()
     val currentIsAscending by viewModel.currentIsAscending.collectAsState()
@@ -91,7 +91,16 @@ fun HomeScreen(
     var flyingStartOffset by remember { mutableStateOf(Offset.Zero) }
     val voucherOnHome by viewModel.voucherOnHome.collectAsState()
     val userVoucherIds by viewModel.userVoucherIds.collectAsState()
-
+    val gridState = rememberLazyGridState()
+    val coroutineScope = rememberCoroutineScope()
+    val mainViewModel: MainViewModel = hiltViewModel(context as ComponentActivity)
+    LaunchedEffect(Unit) {
+        mainViewModel.scrollToTopEvent.collect { targetRoute ->
+            if (targetRoute == "home") {
+                gridState.animateScrollToItem(0)
+            }
+        }
+    }
     DisposableEffect(navController) {
         val listener = NavController.OnDestinationChangedListener { _, destination, _ ->
             if (destination.route == Screen.Home.route || destination.route == "home_screen") {
@@ -132,20 +141,14 @@ fun HomeScreen(
     Scaffold(
         containerColor = BgColor,
         floatingActionButton = {
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                AnimatedVisibility(visible = gridState.firstVisibleItemIndex > 2) {
-                    FloatingActionButton(
-                        onClick = { coroutineScope.launch { gridState.animateScrollToItem(0) } },
-                        containerColor = Color.White, contentColor = GunplaBlue, shape = CircleShape,
-                        modifier = Modifier.size(48.dp)
-                    ) { Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Top") }
-                }
-
-                FloatingActionButton(
-                    onClick = { showSupportSheet = true },
-                    containerColor = GunplaBlue, contentColor = Color.White, shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.size(56.dp)
-                ) { Icon(Icons.Default.SupportAgent, contentDescription = "Support", modifier = Modifier.size(28.dp)) }
+            FloatingActionButton(
+                onClick = { showSupportSheet = true },
+                containerColor = GunplaBlue,
+                contentColor = Color.White,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.size(56.dp)
+            ) {
+                Icon(Icons.Default.SupportAgent, contentDescription = "Support", modifier = Modifier.size(28.dp))
             }
         }
     ) { paddingValues ->
@@ -185,7 +188,14 @@ fun HomeScreen(
                                     itemsIndexed(items = newArrivals, key = { index, product -> "new_${product.id}_$index" }) { _, product ->
                                         ProductItem(
                                             product = product, modifier = Modifier.width(160.dp),
-                                            onClick = { navController.navigate(Screen.Detail.createRoute(product.id)) },
+                                            onClick = {
+                                                if (product.id.isNotBlank()) {
+                                                    navController.navigate(Screen.Detail.createRoute(product.id))
+                                                } else {
+                                                    Toast.makeText(context, "Lỗi: Sản phẩm này đang bị thiếu ID!", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+
                                             onAddToCart = { offset ->
                                                 productToAddToCart = product
                                                 flyingStartOffset = offset
@@ -228,7 +238,14 @@ fun HomeScreen(
                         Box(modifier = Modifier.fillMaxWidth().padding(start = if (index % 2 == 0) 16.dp else 0.dp, end = if (index % 2 == 1) 16.dp else 0.dp)) {
                             ProductItem(
                                 product = product, modifier = Modifier.fillMaxWidth(),
-                                onClick = { navController.navigate(Screen.Detail.createRoute(product.id)) },
+                                onClick = {
+                                    if (product.id.isNotBlank()) {
+                                        navController.navigate(Screen.Detail.createRoute(product.id))
+                                    } else {
+                                        Toast.makeText(context, "Lỗi: Sản phẩm này đang bị thiếu ID!", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+
                                 onAddToCart = { offset ->
                                     productToAddToCart = product
                                     flyingStartOffset = offset

@@ -72,43 +72,60 @@ class AdminProductListViewModel @Inject constructor(
                 val inputStream = context.contentResolver.openInputStream(uri)
                 val csvReader = CSVReader(InputStreamReader(inputStream))
                 val rows = csvReader.readAll()
+
                 var successCount = 0
+                var updateCount = 0
                 for (i in 1 until rows.size) {
                     val tokens = rows[i]
-
-                    val name = tokens[0].trim()
-                    val category = tokens[1].trim()
-                    val price = tokens[2].trim().toLongOrNull() ?: 0L
-                    val originalPrice = tokens[3].trim().toLongOrNull() ?: 0L
-                    val stock = tokens[4].trim().toIntOrNull() ?: 0
-                    val description = tokens[5].trim()
-                    val imagesString = tokens[6].trim()
-
-                    val imagesList = imagesString
-                        .split("|")
-                        .map { it.trim() }
-
-                    val product = Product(
-                        name = name,
-                        category = category,
-                        price = price,
-                        originalPrice = originalPrice,
-                        stock = stock,
-                        description = description,
-                        imageUrl = imagesList.firstOrNull() ?: "",
-                        images = imagesList,
-                        isNew = true,
-                        isActive = true
-                    )
-
-                    productRepository.addProduct(product)
-                    successCount++
+                    if (tokens.size < 10) continue
+                    val sku = tokens[0].trim()
+                    val name = tokens[1].trim()
+                    val category = tokens[2].trim()
+                    val price = tokens[3].trim().toLongOrNull() ?: 0L
+                    val originalPrice = tokens[4].trim().toLongOrNull() ?: 0L
+                    val costPrice = tokens[5].trim().toLongOrNull() ?: 0L
+                    val stock = tokens[6].trim().toIntOrNull() ?: 0
+                    val weight = tokens[7].trim().toIntOrNull() ?: 0
+                    val description = tokens[8].trim()
+                    val imagesString = tokens[9].trim()
+                    val imagesList = imagesString.split("|").map { it.trim() }.filter { it.isNotEmpty() }
+                    val existingProduct = _allProducts.value.find { it.sku == sku }
+                    if (existingProduct != null) {
+                        val updatedProduct = existingProduct.copy(
+                            stock = existingProduct.stock + stock,
+                            price = price,
+                            costPrice = costPrice,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        productRepository.updateProduct(updatedProduct)
+                        updateCount++
+                    } else {
+                        val newProduct = Product(
+                            sku = sku,
+                            name = name,
+                            category = category,
+                            price = price,
+                            originalPrice = originalPrice,
+                            costPrice = costPrice,
+                            stock = stock,
+                            weight = weight,
+                            description = description,
+                            imageUrl = imagesList.firstOrNull() ?: "",
+                            images = imagesList,
+                            isActive = true,
+                            createdAt = System.currentTimeMillis(),
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        productRepository.addProduct(newProduct)
+                        successCount++
+                    }
                 }
-
-                Toast.makeText(context, "Đã import $successCount sản phẩm!", Toast.LENGTH_LONG).show()
+                loadProducts()
+                Toast.makeText(context, "Thành công: Thêm mới $successCount | Cập nhật $updateCount SP!", Toast.LENGTH_LONG).show()
 
             } catch (e: Exception) {
                 e.printStackTrace()
+                Toast.makeText(context, "Lỗi Import File: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }

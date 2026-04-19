@@ -2,16 +2,13 @@ package com.example.storepromax.di
 
 import android.content.Context
 import androidx.room.Room
+import com.example.storepromax.data.api.GunplaBackendApi
 import com.example.storepromax.data.local.AppDatabase
 import com.example.storepromax.data.local.dao.HistoryDao
-import com.example.storepromax.data.repository.CartRepositoryImpl
 import com.example.storepromax.data.repository.ReviewRepositoryImpl
 import com.example.storepromax.data.repository.UserRepositoryImpl
-import com.example.storepromax.data.repository.VoucherRepositoryImpl
-import com.example.storepromax.domain.repository.CartRepository
 import com.example.storepromax.domain.repository.ReviewRepository
 import com.example.storepromax.domain.repository.UserRepository
-import com.example.storepromax.domain.repository.VoucherRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
@@ -20,6 +17,8 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
 import javax.inject.Singleton
 
 @Module
@@ -71,5 +70,14 @@ object AppModule {
         auth: FirebaseAuth
     ): ReviewRepository {
         return ReviewRepositoryImpl(firestore, auth)
+    }
+    @Provides
+    @Singleton
+    fun provideGunplaBackendApi(): GunplaBackendApi {
+        return Retrofit.Builder()
+            .baseUrl("https://gunpla-backend-ht5n.onrender.com/")
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(GunplaBackendApi::class.java)
     }
 }

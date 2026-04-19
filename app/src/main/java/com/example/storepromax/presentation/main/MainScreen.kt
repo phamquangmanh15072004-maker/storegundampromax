@@ -87,8 +87,8 @@ fun MainScreen(rootNavController: NavController) {
                 currentRoute = currentRoute,
                 onItemClick = { item ->
                     if (item.route == currentRoute) {
-                        if (item.route == "feed") {
-                            mainViewModel.triggerScrollToTop()
+                        if (item.route == "home" || item.route == "feed") {
+                            mainViewModel.triggerScrollToTop(item.route)
                         }
                     } else {
                         navController.navigate(item.route) {

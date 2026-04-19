@@ -1,6 +1,5 @@
 package com.example.storepromax.presentation.admin.order
 
-import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -8,11 +7,10 @@ import androidx.lifecycle.viewModelScope
 import com.cloudinary.android.MediaManager
 import com.cloudinary.android.callback.ErrorInfo
 import com.cloudinary.android.callback.UploadCallback
-import com.example.storepromax.admin.utils.NotificationHelper
+import com.example.storepromax.domain.repository.NotificationRepository
 import com.example.storepromax.domain.repository.OrderRepository
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,8 +24,8 @@ import kotlin.coroutines.resume
 @HiltViewModel
 class AdminOrderDetailViewModel @Inject constructor(
     private val orderRepository: OrderRepository,
+    private val notificationRepository: NotificationRepository,
     private val firestore: FirebaseFirestore,
-    @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -52,12 +50,11 @@ class AdminOrderDetailViewModel @Inject constructor(
                             sendNotificationToUser(
                                 userId = currentOrder.userId,
                                 orderId = currentOrder.id,
-                                status = OrderStatus.REFUNDED,
+                                status = "REFUNDED",
                                 reason = "Tiền đã được hoàn về tài khoản ${currentOrder.refundBankShortName}. Vui lòng kiểm tra ứng dụng ngân hàng."
                             )
                         }
                     }
-                } else {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -120,19 +117,20 @@ class AdminOrderDetailViewModel @Inject constructor(
                 accountName = null
             )
 
-            val notifyStatus = if (isPaid) OrderStatus.REFUNDING else OrderStatus.CANCELLED
+            val notifyStatus = if (isPaid) "REFUNDING" else "CANCELLED"
             sendNotificationToUser(currentOrder.userId, currentOrder.id, notifyStatus, reason)
         }
     }
+
     fun confirmRefund() {
         viewModelScope.launch {
             val currentOrder = order.value ?: return@launch
-            if (currentOrder.status == OrderStatus.REFUNDING) {
-                orderRepository.updateOrderStatus(orderId, OrderStatus.REFUNDED).onSuccess {
+            if (currentOrder.status == "REFUNDING") {
+                orderRepository.updateOrderStatus(orderId, "REFUNDED").onSuccess {
                     sendNotificationToUser(
                         userId = currentOrder.userId,
                         orderId = currentOrder.id,
-                        status = OrderStatus.REFUNDED,
+                        status = "REFUNDED",
                         reason = "Tiền đã được hoàn về tài khoản ${currentOrder.refundBankShortName} của bạn."
                     )
                 }
@@ -145,16 +143,14 @@ class AdminOrderDetailViewModel @Inject constructor(
             try {
                 val document = firestore.collection("users").document(userId).get().await()
                 val token = document.getString("fcmToken") ?: ""
-                if (token.isNotEmpty()) {
-                    NotificationHelper.sendOrderNotification(
-                        context = context,
-                        userToken = token,
-                        userId = userId,
-                        orderId = orderId,
-                        status = status,
-                        cancelReason = reason
-                    )
-                }
+
+                notificationRepository.sendOrderNotification(
+                    userToken = token,
+                    userId = userId,
+                    orderId = orderId,
+                    status = status,
+                    cancelReason = reason
+                )
             } catch (e: Exception) {
                 e.printStackTrace()
             }
