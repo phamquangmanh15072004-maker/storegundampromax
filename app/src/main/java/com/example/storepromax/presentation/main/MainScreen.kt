@@ -1,7 +1,5 @@
 package com.example.storepromax.presentation.main
 
-import android.R.attr.scaleX
-import android.R.attr.scaleY
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -15,9 +13,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,6 +41,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -64,18 +60,29 @@ import com.example.storepromax.presentation.profile.ProfileScreen
 val PrimaryBlue = Color(0xFF006AF5)
 val IconGray = Color(0xFF757575)
 
+// 🌟 1. CẬP NHẬT DATA CLASS (Thêm thuộc tính badgeCount)
+data class BottomNavItem(
+    val title: String,
+    val route: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector,
+    val badgeCount: Int = 0 // Mặc định là 0 (Không hiện)
+)
+
 @Composable
 fun MainScreen(rootNavController: NavController) {
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val mainViewModel: MainViewModel = hiltViewModel(context as androidx.activity.ComponentActivity)
+    val unreadChatCount by mainViewModel.unreadChatCount.collectAsState(initial = 0)
     val items = listOf(
         BottomNavItem("Trang chủ", "home", Icons.Filled.Home, Icons.Outlined.Home),
-        BottomNavItem("Tin nhắn", "chat", Icons.Filled.Chat, Icons.Outlined.Chat),
+        BottomNavItem("Tin nhắn", "chat", Icons.Filled.Chat, Icons.Outlined.Chat, badgeCount = unreadChatCount),
         BottomNavItem("Khám phá", "feed", Icons.Filled.Newspaper, Icons.Outlined.Newspaper),
         BottomNavItem("Giỏ hàng", "cart", Icons.Filled.ShoppingCart, Icons.Outlined.ShoppingCart),
         BottomNavItem("Tài khoản", "profile", Icons.Filled.Person, Icons.Outlined.Person),
     )
-    val context = LocalContext.current
-    val mainViewModel: MainViewModel = hiltViewModel(context as androidx.activity.ComponentActivity)
+
     Scaffold(
         containerColor = Color(0xFFF5F5F5),
         bottomBar = {
@@ -112,9 +119,7 @@ fun MainScreen(rootNavController: NavController) {
             composable("feed") { FeedScreen(rootNavController) }
             composable("cart") { CartScreen(rootNavController) }
             composable("profile") { ProfileScreen(rootNavController) }
-            composable("chat") {
-                UserChatListScreen(rootNavController)
-            }
+            composable("chat") { UserChatListScreen(rootNavController) }
         }
     }
 }
@@ -180,65 +185,33 @@ fun CurvedBottomBar(
         }
 
         val centerItem = items[2]
-        val isCenterSelected = currentRoute == centerItem.route
-
         val fabScale by animateFloatAsState(
             targetValue = if (isCenterSelected) 1.08f else 1f,
-            animationSpec = if (isCenterSelected) {
-                tween(
-                    durationMillis = 180,
-                    easing = FastOutSlowInEasing
-                )
-            } else {
-                tween(
-                    durationMillis = 220,
-                    easing = LinearOutSlowInEasing
-                )
-            },
+            animationSpec = if (isCenterSelected) tween(180, easing = FastOutSlowInEasing) else tween(220, easing = LinearOutSlowInEasing),
             label = "fabScale"
         )
-
         val fabElevation by animateDpAsState(
             targetValue = if (isCenterSelected) 10.dp else 6.dp,
-            animationSpec = if (isCenterSelected) {
-                tween(180, easing = FastOutSlowInEasing)
-            } else {
-                tween(220, easing = LinearOutSlowInEasing)
-            },
+            animationSpec = if (isCenterSelected) tween(180, easing = FastOutSlowInEasing) else tween(220, easing = LinearOutSlowInEasing),
             label = "fabElevation"
         )
-
 
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .offset(y = (-fabSize / 2))
-                .graphicsLayer {
-                    scaleX = fabScale
-                    scaleY = fabScale
-                }
-                .shadow(
-                    elevation = fabElevation,
-                    shape = CircleShape
-                )
+                .graphicsLayer { scaleX = fabScale; scaleY = fabScale }
+                .shadow(elevation = fabElevation, shape = CircleShape)
                 .size(fabSize + 8.dp)
                 .background(Color.White, CircleShape)
                 .padding(4.dp)
                 .clip(CircleShape)
-                .background(
-                    if (isCenterSelected) PrimaryBlue else Color(0xFFF5F5F5)
-                )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { onItemClick(centerItem) },
+                .background(if (isCenterSelected) PrimaryBlue else Color(0xFFF5F5F5))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onItemClick(centerItem) },
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = if (isCenterSelected)
-                    centerItem.selectedIcon
-                else
-                    centerItem.unselectedIcon,
+                imageVector = if (isCenterSelected) centerItem.selectedIcon else centerItem.unselectedIcon,
                 tint = if (isCenterSelected) Color.White else IconGray,
                 modifier = Modifier.size(28.dp),
                 contentDescription = null
@@ -259,20 +232,10 @@ class BottomNavCurveShape(private val radius: androidx.compose.ui.unit.Dp) : and
                 val width = size.width
                 val height = size.height
                 val centerX = width / 2
-
                 moveTo(0f, 0f)
                 lineTo(centerX - radiusPx * 2, 0f)
-                cubicTo(
-                    centerX - radiusPx, 0f,
-                    centerX - radiusPx, -radiusPx * 0.8f,
-                    centerX, -radiusPx * 0.8f
-                )
-                cubicTo(
-                    centerX + radiusPx, -radiusPx * 0.8f,
-                    centerX + radiusPx, 0f,
-                    centerX + radiusPx * 2, 0f
-                )
-
+                cubicTo(centerX - radiusPx, 0f, centerX - radiusPx, -radiusPx * 0.8f, centerX, -radiusPx * 0.8f)
+                cubicTo(centerX + radiusPx, -radiusPx * 0.8f, centerX + radiusPx, 0f, centerX + radiusPx * 2, 0f)
                 lineTo(width, 0f)
                 lineTo(width, height)
                 lineTo(0f, height)
@@ -281,82 +244,75 @@ class BottomNavCurveShape(private val radius: androidx.compose.ui.unit.Dp) : and
         )
     }
 }
+
 @Composable
 fun StandardBottomNavItem(
     item: BottomNavItem,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val contentColor by animateColorAsState(
-        targetValue = if (isSelected) PrimaryBlue else IconGray,
-        animationSpec = tween(durationMillis = 300),
-        label = "color"
-    )
-
-    val iconScale by animateFloatAsState(
-        targetValue = if (isSelected) 1.1f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "scale"
-    )
-
-    val iconTranslationY by animateDpAsState(
-        targetValue = if (isSelected) (-2).dp else 0.dp,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
-        label = "translationY"
-    )
+    val contentColor by animateColorAsState(targetValue = if (isSelected) PrimaryBlue else IconGray, animationSpec = tween(durationMillis = 300), label = "color")
+    val iconScale by animateFloatAsState(targetValue = if (isSelected) 1.1f else 1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow), label = "scale")
+    val iconTranslationY by animateDpAsState(targetValue = if (isSelected) (-2).dp else 0.dp, animationSpec = spring(stiffness = Spring.StiffnessLow), label = "translationY")
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
         modifier = Modifier
             .fillMaxHeight()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { onClick() }
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
     ) {
-        Icon(
-            imageVector = if (isSelected) item.selectedIcon else item.unselectedIcon,
-            contentDescription = item.title,
-            tint = contentColor,
-            modifier = Modifier
-                .size(24.dp)
-                .graphicsLayer {
-                    scaleX = iconScale
-                    scaleY = iconScale
-                    translationY = iconTranslationY.toPx()
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = if (isSelected) item.selectedIcon else item.unselectedIcon,
+                contentDescription = item.title,
+                tint = contentColor,
+                modifier = Modifier
+                    .size(26.dp)
+                    .graphicsLayer {
+                        scaleX = iconScale
+                        scaleY = iconScale
+                        translationY = iconTranslationY.toPx()
+                    }
+            )
+            if (item.badgeCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 8.dp, y = (-2).dp)
+                        .defaultMinSize(minWidth = 16.dp)
+                        .height(16.dp)
+                        .background(Color(0xFFE53935), CircleShape)
+                        .border(1.5.dp, Color.White, CircleShape)
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (item.badgeCount > 9) "9+" else item.badgeCount.toString(),
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 9.sp
+                    )
                 }
-        )
+            }
+        }
+
         Column(
-            modifier = Modifier
-                .height(16.dp)
-                .offset(y = (-4).dp),
+            modifier = Modifier.height(16.dp).offset(y = (-4).dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            androidx.compose.animation.AnimatedVisibility(
+            AnimatedVisibility(
                 visible = isSelected,
                 enter = fadeIn(tween(200)) + expandVertically(tween(200)),
                 exit = fadeOut(tween(200)) + shrinkVertically(tween(200))
             ) {
                 Text(
-                    text = item.title,
-                    color = contentColor,
-                    fontSize = 10.sp,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    maxLines = 1,
-                    lineHeight = 10.sp
+                    text = item.title, color = contentColor, fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold, maxLines = 1, lineHeight = 10.sp
                 )
             }
         }
     }
 }
-data class BottomNavItem(
-    val title: String,
-    val route: String,
-    val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector
-)

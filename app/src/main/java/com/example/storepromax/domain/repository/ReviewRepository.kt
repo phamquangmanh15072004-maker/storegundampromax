@@ -9,7 +9,8 @@ interface ReviewRepository {
         content: String,
         parentId: String?,
         rating: Int,
-        mediaUrls: List<String> = emptyList()
+        mediaUrls: List<String>,
+        orderId: String? = null
     )
     suspend fun submitRating(productId: String, rating: Int)
     suspend fun deleteReview(productId: String, reviewId: String)

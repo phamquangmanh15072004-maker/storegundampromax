@@ -200,8 +200,14 @@ class HomeViewModel @Inject constructor(
     fun loadVouchers() {
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
         viewModelScope.launch {
-            voucherRepository.getAvailableVouchers().onSuccess { _voucherOnHome.value = it }
-            if (uid.isNotEmpty()) voucherRepository.getUserVouchers(uid).onSuccess { list -> _userVoucherIds.value = list.map { it.voucherId } }
+            voucherRepository.getAvailableVouchers().onSuccess { list ->
+                _voucherOnHome.value = list.filter { it.isPublic }
+            }
+            if (uid.isNotEmpty()) {
+                voucherRepository.getUserVouchers(uid).onSuccess { list ->
+                    _userVoucherIds.value = list.map { it.voucherId }
+                }
+            }
         }
     }
 

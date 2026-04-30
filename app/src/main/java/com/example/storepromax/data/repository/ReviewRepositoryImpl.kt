@@ -46,10 +46,26 @@ class ReviewRepositoryImpl @Inject constructor(
         content: String,
         parentId: String?,
         rating: Int,
-        mediaUrls: List<String>
+        mediaUrls: List<String>,
+        orderId: String?
     ) {
         val currentUser = auth.currentUser ?: throw Exception("Bạn cần đăng nhập để bình luận!")
         val userId = currentUser.uid
+        if (orderId != null && parentId == null) {
+            val orderRef = firestore.collection("orders").document(orderId)
+            val orderSnap = orderRef.get().await()
+            if (!orderSnap.exists()) throw Exception("Không tìm thấy thông tin đơn hàng!")
+            val status = orderSnap.getString("status") ?: ""
+            if (status != "COMPLETED" && status != "RETURN_REJECTED") {
+                throw Exception("Đơn hàng đang xử lý khiếu nại hoặc đã hoàn tiền. Bạn không thể đánh giá!")
+            }
+            val reviewedProducts = orderSnap.get("reviewedProducts") as? List<String> ?: emptyList()
+            if (reviewedProducts.contains(productId)) {
+                throw Exception("Bạn đã đánh giá sản phẩm này rồi!")
+            }
+            val newReviewedList = reviewedProducts + productId
+            orderRef.update("reviewedProducts", newReviewedList).await()
+        }
         val reviewRef = firestore.collection("products").document(productId)
             .collection("reviews").document()
 
@@ -64,11 +80,17 @@ class ReviewRepositoryImpl @Inject constructor(
             "rating" to rating,
             "mediaUrls" to mediaUrls
         )
+
         if (parentId != null) {
             newReview["parentId"] = parentId
         }
 
+        if (orderId != null) {
+            newReview["orderId"] = orderId
+        }
+
         reviewRef.set(newReview).await()
+
         if (rating > 0) {
             updateProductAverageRating(productId)
         }
@@ -79,27 +101,23 @@ class ReviewRepositoryImpl @Inject constructor(
         val userId = currentUser.uid
 
         val reviewRef = firestore.collection("products").document(productId)
-            .collection("reviews").document(userId) // Dùng userId làm ID để mỗi người chỉ được 1 đánh giá sao gốc
+            .collection("reviews").document()
 
         firestore.runTransaction { transaction ->
-            val snapshot = transaction.get(reviewRef)
-            if (snapshot.exists()) {
-                transaction.update(reviewRef, "rating", rating)
-            } else {
-                val newReview = hashMapOf<String, Any>(
-                    "id" to reviewRef.id,
-                    "productId" to productId,
-                    "userId" to userId,
-                    "userName" to (currentUser.displayName ?: "Anonymous"),
-                    "avatarUrl" to (currentUser.photoUrl?.toString() ?: ""),
-                    "rating" to rating,
-                    "content" to "",
-                    "timestamp" to System.currentTimeMillis(),
-                    "mediaUrls" to emptyList<String>()
-                )
-                transaction.set(reviewRef, newReview)
-            }
+            val newReview = hashMapOf<String, Any>(
+                "id" to reviewRef.id,
+                "productId" to productId,
+                "userId" to userId,
+                "userName" to (currentUser.displayName ?: "Anonymous"),
+                "avatarUrl" to (currentUser.photoUrl?.toString() ?: ""),
+                "rating" to rating,
+                "content" to "",
+                "timestamp" to System.currentTimeMillis(),
+                "mediaUrls" to emptyList<String>()
+            )
+            transaction.set(reviewRef, newReview)
         }.await()
+
         updateProductAverageRating(productId)
     }
 

@@ -1,5 +1,6 @@
 package com.example.storepromax.presentation.notification
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -38,7 +40,7 @@ fun NotificationScreen(
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
 
     var showMenu by remember { mutableStateOf(false) }
-
+    val context = LocalContext.current
     Scaffold(
         topBar = {
             TopAppBar(
@@ -116,18 +118,18 @@ fun NotificationScreen(
                                         navController.navigate("post_detail/${notification.postId}")
                                     }
                                     notification.action == "NAVIGATE_TO_REVIEW" && notification.orderId != null -> {
-                                        navController.navigate("write_review_screen/${notification.orderId}")
+                                        viewModel.checkCanReviewOrder(notification.orderId) { canReview, msg ->
+                                            if (canReview) {
+                                                navController.navigate("write_review_screen/${notification.orderId}")
+                                            } else {
+                                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                            }
+                                        }
                                     }
                                     notification.orderId != null -> {
-                                        val tabIndex = when {
-                                            notification.title.contains("xác nhận", ignoreCase = true) -> 2
-                                            notification.title.contains("vận chuyển", ignoreCase = true) || notification.title.contains("giao hàng", ignoreCase = true) -> 3
-                                            notification.title.contains("thành công", ignoreCase = true) -> 4
-                                            notification.title.contains("hủy", ignoreCase = true) -> 5
-                                            notification.title.contains("hoàn tiền", ignoreCase = true) -> 6
-                                            else -> 0
+                                        viewModel.getCurrentOrderTabIndex(notification.orderId) { actualTabIndex ->
+                                            navController.navigate("order_history_screen/$actualTabIndex")
                                         }
-                                        navController.navigate("order_history_screen/$tabIndex")
                                     }
                                 }
                             }

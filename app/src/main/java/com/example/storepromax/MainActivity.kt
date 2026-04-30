@@ -48,6 +48,7 @@ import com.example.storepromax.presentation.feed.PostDetailScreen
 import com.example.storepromax.presentation.login.LoginScreen
 import com.example.storepromax.presentation.main.MainScreen
 import com.example.storepromax.presentation.main.MainViewModel
+import com.example.storepromax.presentation.myreview.MyReviewScreen
 import com.example.storepromax.presentation.myvoucher.MyVoucherScreen
 import com.example.storepromax.presentation.navigation.Screen
 import com.example.storepromax.presentation.notification.NotificationScreen
@@ -309,12 +310,10 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable(
-                        // 🌟 1. Cập nhật route để nhận cả 4 biến
                         route = "checkout_screen?discountCode={discountCode}&freeshipCode={freeshipCode}&productId={productId}&quantity={quantity}",
                         arguments = listOf(
                             navArgument("discountCode") { type = NavType.StringType; defaultValue = "" },
                             navArgument("freeshipCode") { type = NavType.StringType; defaultValue = "" },
-                            // 🌟 2. Thêm 2 argument mới
                             navArgument("productId") {
                                 type = NavType.StringType
                                 nullable = true
@@ -452,6 +451,9 @@ class MainActivity : ComponentActivity() {
                             navController = navController,
                             initialTabIndex = tabIndex
                         )
+                    }
+                    composable("my_reviews") {
+                        MyReviewScreen(navController = navController)
                     }
                 }
             }

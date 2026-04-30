@@ -246,7 +246,7 @@ class CheckoutViewModel @Inject constructor(
         viewModelScope.launch {
             voucherRepository.getUserVouchers(userId).onSuccess { savedList ->
                 val availableSaved = savedList.filter { it.status == "AVAILABLE" }
-                val voucherIds = availableSaved.map { it.voucherId }.distinct()
+                val voucherIds = availableSaved.mapNotNull { it.voucherId }.filter { it.isNotBlank() }.distinct()
 
                 if (voucherIds.isEmpty()) {
                     _availableVouchers.value = emptyList()
@@ -254,16 +254,7 @@ class CheckoutViewModel @Inject constructor(
                 }
 
                 voucherRepository.getVouchersByIds(voucherIds).onSuccess { systemVouchers ->
-                    val currentTime = System.currentTimeMillis()
-
-                    val validVouchers = systemVouchers.filter { v ->
-                        val expTime = (v.expirationDate as? Number)?.toLong() ?: 0L
-                        val isNotExpired = expTime == 0L || expTime > currentTime
-
-                        v.isActive && isNotExpired && v.usedCount < v.usageLimit
-                    }
-
-                    _availableVouchers.value = validVouchers
+                    _availableVouchers.value = systemVouchers
                     applyPendingVouchers()
                 }
             }
@@ -295,9 +286,26 @@ class CheckoutViewModel @Inject constructor(
     fun applyVoucherByCode(code: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             voucherRepository.getVoucherByCode(code.uppercase().trim()).onSuccess { voucher ->
-                if (totalPrice.value < voucher.minOrderValue) onResult(false, "Đơn hàng chưa đạt mức tối thiểu")
-                else if (voucher.usedCount >= voucher.usageLimit) onResult(false, "Mã đã hết lượt")
-                else { toggleVoucher(voucher); onResult(true, "Áp dụng thành công!") }
+                val currentTime = System.currentTimeMillis()
+                if (voucher.startDate > currentTime) {
+                    onResult(false, "Voucher này chưa đến giờ sử dụng!")
+                }
+                else if (voucher.expirationDate < currentTime && voucher.expirationDate > 0L) {
+                    onResult(false, "Voucher này đã hết hạn!")
+                }
+                else if (totalPrice.value < voucher.minOrderValue) {
+                    onResult(false, "Đơn hàng chưa đạt mức tối thiểu")
+                }
+                else if (voucher.usedCount >= voucher.usageLimit) {
+                    onResult(false, "Mã đã hết lượt")
+                }
+                else if (!voucher.isActive) {
+                    onResult(false, "Mã này đã bị vô hiệu hóa")
+                }
+                else {
+                    toggleVoucher(voucher)
+                    onResult(true, "Áp dụng thành công!")
+                }
             }.onFailure { onResult(false, "Mã không hợp lệ") }
         }
     }

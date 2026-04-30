@@ -40,19 +40,17 @@ fun LoginScreen(
     navController: NavController,
     viewModel: LoginViewModel = hiltViewModel()
 ) {
-    // 1. Lấy State từ ViewModel (Dùng delegate 'by' cho gọn)
     val loginState by viewModel.loginState
     val context = LocalContext.current
-
-    // 2. Biến UI cho việc ẩn hiện mật khẩu
     var isPasswordVisible by remember { mutableStateOf(false) }
 
-    // 3. LẮNG NGHE SỰ KIỆN ĐĂNG NHẬP THÀNH CÔNG/THẤT BẠI
+    // 🌟 1. TẠO BIẾN CỜ ĐỂ KHÓA GIAO DIỆN
+    val isLoading = loginState is LoginState.Loading
+
     LaunchedEffect(loginState) {
         when (val state = loginState) {
             is LoginState.Success -> {
                 Toast.makeText(context, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
-                // 🔥 KIỂM TRA ROLE ĐỂ ĐIỀU HƯỚNG
                 if (state.role == "admin") {
                     navController.navigate("admin_dashboard") {
                         popUpTo(Screen.Welcome.route) { inclusive = true }
@@ -62,25 +60,23 @@ fun LoginScreen(
                         popUpTo(Screen.Welcome.route) { inclusive = true }
                     }
                 }
-                viewModel.resetState() // Reset để tránh lặp lại khi back về
+                viewModel.resetState()
             }
             is LoginState.Error -> {
                 Toast.makeText(context, state.message, Toast.LENGTH_LONG).show()
                 viewModel.resetState()
             }
-            else -> { /* Không làm gì khi Idle hoặc Loading */ }
+            else -> { }
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Background Image
         Image(
             painter = painterResource(id = R.drawable.background_login),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
-        // Lớp phủ đen mờ
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -127,7 +123,8 @@ fun LoginScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        enabled = !isLoading // 🌟 KHÓA INPUT
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -142,9 +139,13 @@ fun LoginScreen(
                         singleLine = true,
                         visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        enabled = !isLoading, // 🌟 KHÓA INPUT
                         trailingIcon = {
                             val image = if (isPasswordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
-                            IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                            IconButton(
+                                onClick = { isPasswordVisible = !isPasswordVisible },
+                                enabled = !isLoading // 🌟 KHÓA LUÔN NÚT XEM MẬT KHẨU
+                            ) {
                                 Icon(imageVector = image, contentDescription = null)
                             }
                         }
@@ -158,13 +159,17 @@ fun LoginScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
                                 checked = viewModel.isRemember.value,
-                                onCheckedChange = { viewModel.isRemember.value = it }
+                                onCheckedChange = { viewModel.isRemember.value = it },
+                                enabled = !isLoading // 🌟 KHÓA CHECKBOX
                             )
                             Text(text = "Ghi nhớ", fontSize = 14.sp)
                         }
 
-                        TextButton(onClick = { /* Todo: Quên mật khẩu */ }) {
-                            Text(text = "Quên mật khẩu?", color = Color.Gray, fontSize = 12.sp)
+                        TextButton(
+                            onClick = { /* Todo: Quên mật khẩu */ },
+                            enabled = !isLoading // 🌟 KHÓA NÚT QUÊN MẬT KHẨU
+                        ) {
+                            Text(text = "Quên mật khẩu?", color = if (isLoading) Color.LightGray else Color.Gray, fontSize = 12.sp)
                         }
                     }
 
@@ -179,9 +184,9 @@ fun LoginScreen(
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         ),
-                        enabled = loginState !is LoginState.Loading
+                        enabled = !isLoading // 🌟 KHÓA NÚT ĐĂNG NHẬP
                     ) {
-                        if (loginState is LoginState.Loading) {
+                        if (isLoading) {
                             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
                         } else {
                             Text(text = "Đăng nhập", fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -210,18 +215,19 @@ fun LoginScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             ) {
-                SocialButton(iconRes = R.drawable.ic_google)
-                SocialButton(iconRes = R.drawable.ic_facebook)
-                SocialButton(iconRes = R.drawable.ic_apple)
+                // 🌟 TRUYỀN BIẾN isLoading VÀO SocialButton
+                SocialButton(iconRes = R.drawable.ic_google, enabled = !isLoading)
+                SocialButton(iconRes = R.drawable.ic_facebook, enabled = !isLoading)
+                SocialButton(iconRes = R.drawable.ic_apple, enabled = !isLoading)
             }
             Spacer(modifier = Modifier.height(30.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(text = "Chưa có tài khoản? ", color = Color.White.copy(alpha = 0.8f))
                 Text(
                     text = "Đăng ký ngay",
-                    color = Color(0xFFFFC107),
+                    color = if (isLoading) Color.Gray else Color(0xFFFFC107),
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable {
+                    modifier = Modifier.clickable(enabled = !isLoading) { // 🌟 KHÓA NÚT ĐĂNG KÝ
                         navController.navigate(Screen.Register.route)
                     }
                 )
@@ -231,13 +237,21 @@ fun LoginScreen(
     }
 }
 
+// 🌟 CẬP NHẬT COMPOSABLE SocialButton ĐỂ NHẬN BIẾN enabled
 @Composable
-fun SocialButton(iconRes: Int, onClick: () -> Unit = {}) {
+fun SocialButton(iconRes: Int, enabled: Boolean = true, onClick: () -> Unit = {}) {
     Button(
         onClick = onClick,
+        enabled = enabled,
         shape = CircleShape,
-        colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.White,
+            disabledContainerColor = Color.LightGray // Đổi màu khi bị vô hiệu hóa
+        ),
+        elevation = ButtonDefaults.buttonElevation(
+            defaultElevation = 4.dp,
+            disabledElevation = 0.dp
+        ),
         modifier = Modifier.size(50.dp),
         contentPadding = PaddingValues(12.dp)
     ) {
@@ -245,7 +259,8 @@ fun SocialButton(iconRes: Int, onClick: () -> Unit = {}) {
             painter = painterResource(id = iconRes),
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            alpha = if (enabled) 1f else 0.5f // Làm mờ logo khi bị vô hiệu hóa
         )
     }
 }

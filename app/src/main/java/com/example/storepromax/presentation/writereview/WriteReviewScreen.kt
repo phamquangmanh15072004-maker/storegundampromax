@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Product
+import com.example.storepromax.presentation.navigation.Screen
 import com.example.storepromax.ui.components.StarRatingBar
 
 val GunplaBlue = Color(0xFF0D47A1)
@@ -89,15 +90,41 @@ fun WriteReviewScreen(
                 }
             } else if (productsToReview.isEmpty() && !hasSubmittedAtLeastOne) {
                 Column(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Icon(Icons.Default.ErrorOutline, contentDescription = "Lỗi", tint = Color.Gray, modifier = Modifier.size(80.dp))
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = "Hoàn thành",
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(80.dp)
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Không tìm thấy sản phẩm để đánh giá", color = Color.Gray)
+                    Text(
+                        text = "Đơn hàng đã được đánh giá!",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Tất cả sản phẩm trong đơn hàng này đều đã có đánh giá của bạn.",
+                        fontSize = 14.sp,
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = { navController.popBackStack() },
+                        colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue),
+                        shape = RoundedCornerShape(25.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) {
+                        Text("Quay lại", fontWeight = FontWeight.Bold)
+                    }
                 }
-            } else if (pendingReviews.isEmpty() && hasSubmittedAtLeastOne) {
+            }else if (pendingReviews.isEmpty() && hasSubmittedAtLeastOne) {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -110,7 +137,11 @@ fun WriteReviewScreen(
                     Text(text = "Những đánh giá của bạn sẽ giúp cộng đồng mua sắm tốt hơn.", fontSize = 14.sp, color = Color.Gray, textAlign = TextAlign.Center)
                     Spacer(modifier = Modifier.height(32.dp))
                     Button(
-                        onClick = { navController.popBackStack() },
+                        onClick = {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(navController.graph.id) { inclusive = true }
+                            }
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue),
                         shape = RoundedCornerShape(25.dp),
                         modifier = Modifier.fillMaxWidth().height(50.dp)
@@ -217,7 +248,7 @@ fun ReviewItemForm(
                 Text(
                     text = when (formState.rating) {
                         1 -> "Tệ quá 😞"
-                        2 -> "Không hài lòng 撇"
+                        2 -> "Không hài lòng 😭"
                         3 -> "Bình thường 😐"
                         4 -> "Hài lòng 🙂"
                         5 -> "Tuyệt vời 😍"
@@ -295,21 +326,23 @@ fun ReviewItemForm(
                                     .clip(RoundedCornerShape(8.dp))
                                     .border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(8.dp))
                             )
-                            IconButton(
-                                onClick = {
-                                    val newList = formState.selectedImages.filter { it != imageUrl }
-                                    onFormUpdated(formState.copy(selectedImages = newList))
-                                },
+                            Box(
                                 modifier = Modifier
-                                    .size(10.dp)
                                     .align(Alignment.TopEnd)
-                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                    .padding(4.dp)
+                                    .size(18.dp)
+                                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                    .clickable {
+                                        val newList = formState.selectedImages.filter { it != imageUrl }
+                                        onFormUpdated(formState.copy(selectedImages = newList))
+                                    },
+                                contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    Icons.Default.Close,
+                                    imageVector = Icons.Default.Close,
                                     contentDescription = "Xóa",
                                     tint = Color.White,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(12.dp)
                                 )
                             }
                         }

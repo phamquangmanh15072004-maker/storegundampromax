@@ -34,48 +34,72 @@ class LoginViewModel @Inject constructor(
     }
 
     fun login() {
+        val currentEmail = email.value.trim()
+        val currentPassword = password.value.trim()
+
+        if (currentEmail.isEmpty() || currentPassword.isEmpty()) {
+            _loginState.value = LoginState.Error("Vui lòng nhập đầy đủ Email và Mật khẩu!")
+            return
+        }
+
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(currentEmail).matches()) {
+            _loginState.value = LoginState.Error("Định dạng Email không hợp lệ!")
+            return
+        }
+
+        if (currentPassword.length < 6) {
+            _loginState.value = LoginState.Error("Mật khẩu phải có ít nhất 6 ký tự!")
+            return
+        }
         viewModelScope.launch {
             _loginState.value = LoginState.Loading
-            val result = authRepository.login(email.value, password.value)
 
-            result.onSuccess {
-                val currentUser = FirebaseAuth.getInstance().currentUser
-                val userId = currentUser?.uid
+            try {
+                val result = authRepository.login(currentEmail, currentPassword)
 
-                if (userId != null) {
+                result.onSuccess {
+                    val currentUser = FirebaseAuth.getInstance().currentUser
+                    val userId = currentUser?.uid
 
-                    val userResult = authRepository.getUserDetails(userId)
+                    if (userId != null) {
+                        val userResult = authRepository.getUserDetails(userId)
 
-                    userResult.onSuccess { user ->
-                        if (user.isLocked) {
-                            authRepository.logout()
+                        userResult.onSuccess { user ->
+                            if (user.isLocked) {
+                                authRepository.logout()
+                                val reason = if (user.lockReason.isNotEmpty()) "\nLý do: ${user.lockReason}" else ""
+                                _loginState.value = LoginState.Error("Tài khoản của bạn đã bị vô hiệu hóa.$reason")
+                            } else {
+                                userPreferences.saveRememberInfo(currentEmail, isRemember.value)
 
-                            val reason = if (user.lockReason.isNotEmpty()) "\nLý do: ${user.lockReason}" else ""
-                            _loginState.value = LoginState.Error("Tài khoản của bạn đã bị vô hiệu hóa.$reason")
-                        } else {
-                            userPreferences.saveRememberInfo(email.value, isRemember.value)
+                                FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                                    if (task.isSuccessful) {
+                                        val token = task.result
+                                        FirebaseFirestore.getInstance().collection("users").document(userId)
+                                            .set(mapOf("fcmToken" to token), SetOptions.merge())
+                                    }
+                                }
 
-                            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
-                                if (task.isSuccessful) {
-                                    val token = task.result
-                                    FirebaseFirestore.getInstance().collection("users").document(userId)
-                                        .set(mapOf("fcmToken" to token), SetOptions.merge())
+                                if (user.role == "ADMIN") {
+                                    FirebaseMessaging.getInstance().subscribeToTopic("admin_notifications")
+                                    _loginState.value = LoginState.Success("admin")
+                                } else {
+                                    _loginState.value = LoginState.Success("user")
                                 }
                             }
-                            if (user.role == "ADMIN") {
-                                FirebaseMessaging.getInstance().subscribeToTopic("admin_notifications")
-                                _loginState.value = LoginState.Success("admin")
-                            } else {
-                                _loginState.value = LoginState.Success("user")
-                            }
+                        }.onFailure { e ->
+                            _loginState.value = LoginState.Error("Không thể lấy thông tin người dùng: ${e.message}")
+                            authRepository.logout()
                         }
-                    }.onFailure { e ->
-                        _loginState.value = LoginState.Error("Không thể lấy thông tin người dùng: ${e.message}")
+                    } else {
+                        _loginState.value = LoginState.Error("Lỗi: Không xác định được ID người dùng!")
                         authRepository.logout()
                     }
+                }.onFailure {
+                    _loginState.value = LoginState.Error("Thông tin đăng nhập không chính xác!")
                 }
-            }.onFailure {
-                _loginState.value = LoginState.Error(it.message ?: "Đăng nhập thất bại")
+            } catch (e: Exception) {
+                _loginState.value = LoginState.Error("Lỗi hệ thống hoặc mất mạng. Vui lòng thử lại!")
             }
         }
     }

@@ -70,6 +70,7 @@ class OrderRepositoryImpl @Inject constructor(
 
             val globalFreeshipRef = if (!freeshipCode.isNullOrBlank()) getGlobalVoucherRef(freeshipCode) else null
             val userFreeshipRef = if (!freeshipCode.isNullOrBlank()) getUserVoucherRef(freeshipCode, order.userId) else null
+
             val savedOrderId = firestore.runTransaction { transaction ->
                 val productRefs = order.items.map { item ->
                     val docRef = firestore.collection("products").document(item.product.id)
@@ -118,7 +119,6 @@ class OrderRepositoryImpl @Inject constructor(
                 if (freeshipCode != null && userFreeshipRef == null) {
                     throw Exception("Bạn đã sử dụng mã Freeship này hoặc mã không còn hiệu lực!")
                 }
-
                 for ((item, docRef, _) in productRefs) {
                     transaction.update(docRef, "stock", FieldValue.increment(-item.quantity.toLong()))
                     transaction.update(docRef, "sold", FieldValue.increment(item.quantity.toLong()))
@@ -160,7 +160,9 @@ class OrderRepositoryImpl @Inject constructor(
             try {
                 val orderSnapshot = firestore.collection("orders").document(orderId).get().await()
                 if (!orderSnapshot.exists()) return@withContext
-
+                val userId = orderSnapshot.getString("userId")
+                val discountCode = orderSnapshot.getString("discountCode")
+                val freeshipCode = orderSnapshot.getString("freeshipCode")
                 val items = orderSnapshot.get("items") as? List<Map<String, Any>> ?: emptyList()
 
                 val batch = firestore.batch()
@@ -179,8 +181,6 @@ class OrderRepositoryImpl @Inject constructor(
                     accountName?.let { updates["refundAccountName"] = it }
                 }
                 batch.update(orderRef, updates)
-
-                // Trả lại kho
                 for (item in items) {
                     val productMap = item["product"] as? Map<String, Any>
                     val productId = productMap?.get("id") as? String
@@ -189,8 +189,29 @@ class OrderRepositoryImpl @Inject constructor(
                     if (productId != null) {
                         val productRef = firestore.collection("products").document(productId)
                         batch.update(productRef, "stock", FieldValue.increment(quantity))
+                        batch.update(productRef, "sold", FieldValue.increment(-quantity))
                     }
                 }
+                suspend fun restoreVoucher(code: String?) {
+                    if (code.isNullOrBlank() || userId.isNullOrBlank()) return
+                    val globalVoucherDocs = firestore.collection("vouchers")
+                        .whereEqualTo("code", code).get().await()
+
+                    globalVoucherDocs.documents.firstOrNull()?.reference?.let { ref ->
+                        batch.update(ref, "usedCount", FieldValue.increment(-1))
+                    }
+                    val userVoucherDocs = firestore.collection("user_vouchers")
+                        .whereEqualTo("userId", userId)
+                        .whereEqualTo("voucher.code", code)
+                        .whereEqualTo("status", "USED") // Chỉ hoàn những mã đang bị khóa bởi đơn này
+                        .get().await()
+
+                    userVoucherDocs.documents.firstOrNull()?.reference?.let { ref ->
+                        batch.update(ref, "status", "AVAILABLE")
+                    }
+                }
+                restoreVoucher(discountCode)
+                restoreVoucher(freeshipCode)
                 val adminNotifRef = firestore.collection("notifications").document()
                 val adminNotifData = hashMapOf(
                     "title" to "Khách hàng đã hủy đơn ❌",
@@ -202,9 +223,8 @@ class OrderRepositoryImpl @Inject constructor(
                     "createdAt" to System.currentTimeMillis()
                 )
                 batch.set(adminNotifRef, adminNotifData)
-
                 batch.commit().await()
-                Log.d("OrderRepository", "Đã hủy đơn, hoàn kho và ghi chuông Admin thành công!")
+                Log.d("OrderRepository", "Đã hủy đơn, hoàn kho, HOÀN VOUCHER và ghi chuông Admin thành công!")
 
             } catch (e: Exception) {
                 Log.e("OrderRepository", "Lỗi hủy đơn: ${e.message}")
@@ -268,6 +288,80 @@ class OrderRepositoryImpl @Inject constructor(
             Result.success(true)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    override suspend fun requestReturnRefund(
+        orderId: String,
+        reason: String,
+        description: String,
+        images: List<String>,
+        bankBin: String?,
+        bankShortName: String?,
+        accountNumber: String?,
+        accountName: String?
+    ) {
+        withContext(Dispatchers.IO) {
+            val batch = firestore.batch()
+
+            val orderRef = firestore.collection("orders").document(orderId)
+            val updates = mutableMapOf<String, Any>(
+                "status" to "RETURN_PENDING",
+                "returnReason" to reason,
+                "returnDescription" to description,
+                "returnImages" to images,
+                "updatedAt" to System.currentTimeMillis()
+            )
+            bankBin?.let { updates["refundBankBin"] = it }
+            bankShortName?.let { updates["refundBankShortName"] = it }
+            accountNumber?.let { updates["refundAccountNumber"] = it }
+            accountName?.let { updates["refundAccountName"] = it }
+
+            batch.update(orderRef, updates)
+
+            val notifRef = firestore.collection("notifications").document()
+            val notifData = hashMapOf(
+                "title" to "Yêu cầu Trả hàng mới ⚠️",
+                "message" to "Đơn hàng #${orderId.takeLast(6).uppercase()} vừa có yêu cầu trả hàng. Lý do: $reason",
+                "type" to "RETURN_REQUEST",
+                "targetId" to orderId,
+                "targetRoles" to listOf("ADMIN"),
+                "readBy" to emptyList<String>(),
+                "createdAt" to System.currentTimeMillis()
+            )
+            batch.set(notifRef, notifData)
+
+            batch.commit().await()
+        }
+    }
+
+    override suspend fun submitReturnTrackingCode(orderId: String, trackingCode: String): Result<Boolean> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val batch = firestore.batch()
+                val orderRef = firestore.collection("orders").document(orderId)
+                batch.update(orderRef, mapOf(
+                    "status" to "RETURNING",
+                    "returnTrackingCode" to trackingCode,
+                    "updatedAt" to System.currentTimeMillis()
+                ))
+                val notifRef = firestore.collection("notifications").document()
+                val notifData = hashMapOf(
+                    "title" to "Khách đã gửi hàng trả 📦",
+                    "message" to "Đơn hàng #${orderId.takeLast(6).uppercase()} đã được khách gửi bưu điện. Mã vận đơn: $trackingCode",
+                    "type" to "RETURN_TRACKING",
+                    "targetId" to orderId,
+                    "targetRoles" to listOf("ADMIN"),
+                    "readBy" to emptyList<String>(),
+                    "createdAt" to System.currentTimeMillis()
+                )
+                batch.set(notifRef, notifData)
+
+                batch.commit().await()
+                Result.success(true)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
         }
     }
 }

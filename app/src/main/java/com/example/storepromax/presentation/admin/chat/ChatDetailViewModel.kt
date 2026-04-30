@@ -37,8 +37,10 @@ class ChatDetailViewModel @Inject constructor(
 
     private val _uploadingMedia = MutableStateFlow<UploadingMedia?>(null)
     val uploadingMedia = _uploadingMedia.asStateFlow()
+
     private val _partnerAvatarUrl = MutableStateFlow<String?>(null)
     val partnerAvatarUrl = _partnerAvatarUrl.asStateFlow()
+
     val currentUserId = auth.currentUser?.uid ?: ""
 
     fun loadMessages(channelId: String) {
@@ -47,6 +49,7 @@ class ChatDetailViewModel @Inject constructor(
                 _messages.value = listMsg.filter { !it.deletedBy.contains(currentUserId) }
             }
         }
+
         viewModelScope.launch {
             firestore.collection("channels").document(channelId)
                 .addSnapshotListener { snapshot, error ->
@@ -54,8 +57,14 @@ class ChatDetailViewModel @Inject constructor(
                         _currentChannel.value = snapshot.toObject(ChatChannel::class.java)
                     }
                 }
+
+            try {
+                firestore.collection("channels").document(channelId)
+                    .update("unreadCounts.$currentUserId", 0)
+            } catch (e: Exception) { e.printStackTrace() }
         }
     }
+
     fun fetchPartnerInfo(partnerId: String) {
         viewModelScope.launch {
             try {
@@ -69,6 +78,7 @@ class ChatDetailViewModel @Inject constructor(
             }
         }
     }
+
     fun sendMessage(channelId: String, content: String, replyToId: String? = null) {
         if (content.isBlank()) return
 
@@ -81,13 +91,19 @@ class ChatDetailViewModel @Inject constructor(
 
         viewModelScope.launch {
             firestore.collection("channels").document(channelId).collection("messages").document(messageId).set(newMessage)
-            firestore.collection("channels").document(channelId).update(
-                mapOf(
-                    "lastMessage" to content,
-                    "lastUpdated" to System.currentTimeMillis(),
-                    "lastSenderId" to currentUserId
-                )
+            val channel = _currentChannel.value
+            val partnerId = if (channel?.userId == currentUserId) channel.receiverId else channel?.userId
+
+            val updateData = mutableMapOf<String, Any>(
+                "lastMessage" to content,
+                "lastUpdated" to System.currentTimeMillis(),
+                "lastSenderId" to currentUserId
             )
+            if (!partnerId.isNullOrBlank()) {
+                updateData["unreadCounts.$partnerId"] = FieldValue.increment(1)
+            }
+
+            firestore.collection("channels").document(channelId).update(updateData)
         }
     }
 
@@ -109,13 +125,20 @@ class ChatDetailViewModel @Inject constructor(
 
                 firestore.collection("channels").document(channelId).collection("messages").document(messageId).set(newMessage)
 
-                firestore.collection("channels").document(channelId).update(
-                    mapOf(
-                        "lastMessage" to content,
-                        "lastUpdated" to System.currentTimeMillis(),
-                        "lastSenderId" to currentUserId
-                    )
+                // 🌟 TƯƠNG TỰ: TĂNG SỐ ĐẾM CỦA ĐỐI PHƯƠNG
+                val channel = _currentChannel.value
+                val partnerId = if (channel?.userId == currentUserId) channel.receiverId else channel?.userId
+
+                val updateData = mutableMapOf<String, Any>(
+                    "lastMessage" to content,
+                    "lastUpdated" to System.currentTimeMillis(),
+                    "lastSenderId" to currentUserId
                 )
+                if (!partnerId.isNullOrBlank()) {
+                    updateData["unreadCounts.$partnerId"] = FieldValue.increment(1)
+                }
+
+                firestore.collection("channels").document(channelId).update(updateData)
             }
             _uploadingMedia.value = null
         }

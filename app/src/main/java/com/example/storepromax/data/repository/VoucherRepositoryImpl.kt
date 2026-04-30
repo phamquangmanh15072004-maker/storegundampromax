@@ -1,5 +1,6 @@
 package com.example.storepromax.data.repository
 
+import android.util.Log
 import com.example.storepromax.domain.model.UserVoucher
 import com.example.storepromax.domain.model.Voucher
 import com.example.storepromax.domain.repository.VoucherRepository
@@ -40,31 +41,47 @@ class VoucherRepositoryImpl @Inject constructor(
     override suspend fun getVoucherByCode(code: String): Result<Voucher> {
         return try {
             val snapshot = firestore.collection("vouchers")
-                .whereEqualTo("code", code)
+                .whereEqualTo("code", code.uppercase().trim())
                 .get()
                 .await()
 
             if (snapshot.isEmpty) {
                 return Result.failure(Exception("Mã giảm giá không tồn tại!"))
             }
+            val doc = snapshot.documents.first()
+            val voucher = try {
+                doc.toObject(Voucher::class.java)?.copy(id = doc.id)
+            } catch (e: Exception) {
+                Log.e("VoucherRepo", "Lỗi parse Voucher ID: ${doc.id}", e)
+                null
+            }
 
-            val voucher = snapshot.documents.first().toObject(Voucher::class.java)
             if (voucher != null) {
                 Result.success(voucher)
             } else {
-                Result.failure(Exception("Lỗi dữ liệu voucher!"))
+                Result.failure(Exception("Lỗi cấu trúc dữ liệu voucher trên hệ thống!"))
             }
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
     override suspend fun getUserVouchers(userId: String): Result<List<UserVoucher>> {
         return try {
             val snapshot = firestore.collection("user_vouchers")
                 .whereEqualTo("userId", userId)
                 .get()
                 .await()
-            val userVouchers = snapshot.toObjects(UserVoucher::class.java)
+
+            val userVouchers = snapshot.documents.mapNotNull { doc ->
+                try {
+                    doc.toObject(UserVoucher::class.java)?.copy(id = doc.id)
+                } catch (e: Exception) {
+                    Log.e("VoucherRepo", "Lỗi parse UserVoucher ID: ${doc.id}", e)
+                    null
+                }
+            }
+
             Result.success(userVouchers)
         } catch (e: Exception) {
             Result.failure(e)
@@ -75,9 +92,9 @@ class VoucherRepositoryImpl @Inject constructor(
         return try {
             val expirationTime = (voucher.expirationDate as? Number)?.toLong() ?: 0L
             val deleteAtTime = if (expirationTime > 0) {
-                expirationTime + (90L * 24 * 60 * 60 * 1000) // Hết hạn + 90 ngày
+                expirationTime + (90L * 24 * 60 * 60 * 1000)
             } else {
-                System.currentTimeMillis() + (365L * 24 * 60 * 60 * 1000) // Nếu ko HSD thì xóa sau 1 năm
+                System.currentTimeMillis() + (365L * 24 * 60 * 60 * 1000)
             }
             val checkSnapshot = firestore.collection("user_vouchers")
                 .whereEqualTo("userId", userId)
@@ -88,19 +105,24 @@ class VoucherRepositoryImpl @Inject constructor(
             if (!checkSnapshot.isEmpty) {
                 return Result.failure(Exception("Bạn đã lưu mã này trong ví rồi!"))
             }
+            val docRef = firestore.collection("user_vouchers").document()
+
             val newUserVoucher = UserVoucher(
+                id = docRef.id,
                 userId = userId,
                 voucherId = voucher.id,
                 voucher = voucher,
                 status = "AVAILABLE",
                 deleteAt = deleteAtTime
             )
-            firestore.collection("user_vouchers").document().set(newUserVoucher).await()
+
+            docRef.set(newUserVoucher).await()
             Result.success(true)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
     override suspend fun updateVoucherStatus(voucherId: String, isActive: Boolean): Result<Boolean> {
         return try {
             firestore.collection("vouchers").document(voucherId)
@@ -111,6 +133,7 @@ class VoucherRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+
     override suspend fun getAvailableVouchers(): Result<List<Voucher>> {
         return try {
             val currentTime = System.currentTimeMillis()
@@ -119,24 +142,43 @@ class VoucherRepositoryImpl @Inject constructor(
                 .get()
                 .await()
 
-            val vouchers = snapshot.toObjects(Voucher::class.java)
-                // Lọc thêm: Còn hạn và Còn lượt
-                .filter { it.expirationDate > currentTime && it.usedCount < it.usageLimit }
+            val vouchers = snapshot.documents.mapNotNull { doc ->
+                try {
+                    doc.toObject(Voucher::class.java)?.copy(id = doc.id)
+                } catch (e: Exception) {
+                    Log.e("VoucherRepo", "Lỗi parse Available Voucher ID: ${doc.id}", e)
+                    null
+                }
+            }.filter {
+                val isNotExpired = it.expirationDate == 0L || it.expirationDate > currentTime
+                val hasStock = it.usageLimit == 0L || it.usedCount < it.usageLimit
+                isNotExpired && hasStock
+            }
 
             Result.success(vouchers)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
     override suspend fun getAllVouchersForAdmin(): Result<List<Voucher>> {
         return try {
             val snapshot = firestore.collection("vouchers").get().await()
-            val vouchers = snapshot.toObjects(Voucher::class.java)
+            val vouchers = snapshot.documents.mapNotNull { doc ->
+                try {
+                    doc.toObject(Voucher::class.java)?.copy(id = doc.id)
+                } catch (e: Exception) {
+                    Log.e("VoucherRepo", "Lỗi parse Admin Voucher ID: ${doc.id}", e)
+                    null
+                }
+            }
+
             Result.success(vouchers)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
     override suspend fun getVouchersByIds(voucherIds: List<String>): Result<List<Voucher>> {
         return try {
             if (voucherIds.isEmpty()) return Result.success(emptyList())
@@ -144,10 +186,19 @@ class VoucherRepositoryImpl @Inject constructor(
             val allVouchers = mutableListOf<Voucher>()
             for (chunk in chunks) {
                 val snapshot = firestore.collection("vouchers")
-                    .whereIn(com.google.firebase.firestore.FieldPath.documentId(), chunk) // Tìm theo ID của Document
+                    .whereIn(com.google.firebase.firestore.FieldPath.documentId(), chunk)
                     .get()
                     .await()
-                allVouchers.addAll(snapshot.toObjects(Voucher::class.java))
+
+                val chunkVouchers = snapshot.documents.mapNotNull { doc ->
+                    try {
+                        doc.toObject(Voucher::class.java)?.copy(id = doc.id)
+                    } catch (e: Exception) {
+                        Log.e("VoucherRepo", "Lỗi parse Voucher by IDs: ${doc.id}", e)
+                        null
+                    }
+                }
+                allVouchers.addAll(chunkVouchers)
             }
 
             Result.success(allVouchers)

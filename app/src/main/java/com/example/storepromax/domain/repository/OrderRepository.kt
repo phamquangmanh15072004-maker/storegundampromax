@@ -24,4 +24,15 @@ interface OrderRepository {
     fun getOrderById(orderId: String): Flow<Order?>
     suspend fun updateOrderStatus(orderId: String, newStatus: String): Result<Boolean>
     suspend fun confirmRefundWithReceipt(orderId: String, receiptUrl: String): Result<Boolean>
+    suspend fun requestReturnRefund(
+        orderId: String,
+        reason: String,
+        description: String,
+        images: List<String>,
+        bankBin: String?,
+        bankShortName: String?,
+        accountNumber: String?,
+        accountName: String?
+    )
+    suspend fun submitReturnTrackingCode(orderId: String, trackingCode: String): Result<Boolean>
 }

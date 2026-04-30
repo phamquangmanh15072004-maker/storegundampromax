@@ -77,26 +77,16 @@ class CartViewModel @Inject constructor(
         val currentUserId =
             com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
         if (currentUserId.isEmpty()) return
-
         viewModelScope.launch {
             voucherRepository.getUserVouchers(currentUserId).onSuccess { savedList ->
                 val availableSaved = savedList.filter { it.status == "AVAILABLE" }
-                val voucherIds = availableSaved.map { it.voucherId }.distinct()
-
+                val voucherIds = availableSaved.mapNotNull { it.voucherId }.filter { it.isNotBlank() }.distinct()
                 if (voucherIds.isEmpty()) {
                     _availableVouchers.value = emptyList()
                     return@onSuccess
                 }
                 voucherRepository.getVouchersByIds(voucherIds).onSuccess { systemVouchers ->
-                    val currentTime = System.currentTimeMillis()
-                    val validVouchers = systemVouchers.filter { v ->
-                        val expTime = (v.expirationDate as? Number)?.toLong() ?: 0L
-                        val isNotExpired = expTime == 0L || expTime > currentTime
-
-                        v.isActive && isNotExpired && v.usedCount < v.usageLimit
-                    }
-
-                    _availableVouchers.value = validVouchers
+                    _availableVouchers.value = systemVouchers
                     checkVoucherValidity()
                 }
             }
@@ -104,6 +94,20 @@ class CartViewModel @Inject constructor(
     }
 
     fun applyVoucher(voucher: Voucher, onResult: (Boolean, String) -> Unit) {
+        val currentTime = System.currentTimeMillis()
+
+        if (voucher.startDate > currentTime) {
+            onResult(false, "Voucher này chưa đến giờ sử dụng!")
+            return
+        }
+        if (voucher.expirationDate < currentTime && voucher.expirationDate > 0L) {
+            onResult(false, "Voucher này đã hết hạn!")
+            return
+        }
+        if (!voucher.isActive) {
+            onResult(false, "Mã này đã bị vô hiệu hóa!")
+            return
+        }
         if (subTotal.value < voucher.minOrderValue) {
             onResult(false, "Cần mua thêm để đạt tối thiểu ₫${voucher.minOrderValue}")
             return

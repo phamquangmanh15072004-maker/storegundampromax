@@ -15,5 +15,7 @@ data class UserReview(
     @get:Exclude
     var replies: List<UserReview> = emptyList(),
     val mediaUrls: List<String> = emptyList(),
-    val hasEdited: Boolean = false
+    val hasEdited: Boolean = false,
+    val adminReply: String? = null,
+    val replyTimestamp: Long? = null
 )

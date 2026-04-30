@@ -22,11 +22,11 @@ data class Product(
     val images: List<String> = emptyList(),
     val model3DUrl: String? = null,
     val category: String = "",
-
+    val name_lowercase: String = "",
     val rating: Double = 0.0,
     val sold: Int = 0,
     val weight: Int = 0,
-
+    val isLowStockNotified: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val has3D: Boolean = false

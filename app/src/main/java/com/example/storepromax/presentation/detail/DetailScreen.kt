@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -18,7 +17,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,20 +56,18 @@ fun DetailScreen(
 ) {
     var isBuyNowAction by remember { mutableStateOf(false) }
     var showAddToCartSheet by remember { mutableStateOf(false) }
-
+    var relatedProductToAddToCart by remember { mutableStateOf<Product?>(null) }
     val product = viewModel.state.value
     val isLoading = viewModel.isLoading.value
     val reviews = viewModel.reviews.value
-    val userRating = viewModel.userRating.intValue
 
     val wishlistIds by wishlistViewModel.wishlistIds.collectAsState()
     val isFavorite = product != null && wishlistIds.contains(product.id)
     val relatedProducts by viewModel.relatedProducts
-    var reviewIdToDelete by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+
     val averageRating by viewModel.averageRating
     val totalRatings by viewModel.totalRatingsCount
-    val currentUserId = viewModel.currentUserId
 
     if (isLoading || product == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -223,7 +219,6 @@ fun DetailScreen(
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-
                 Column(modifier = Modifier.background(Color.White).padding(16.dp)) {
                     Text(
                         text = "ĐÁNH GIÁ SẢN PHẨM",
@@ -234,17 +229,9 @@ fun DetailScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     ReviewSection(
-                        currentUserId = currentUserId,
                         averageRating = averageRating,
                         totalRatings = totalRatings,
-                        reviews = reviews,
-                        currentUserRating = userRating,
-                        isReadOnly = true,
-                        onCommentSubmit = { content, parentId, rating ->
-                            viewModel.submitComment(content, parentId, rating)
-                        },
-                        onDeleteComment = { reviewId -> reviewIdToDelete = reviewId },
-                        onEditComment = { id, content -> viewModel.editComment(id, content) }
+                        reviews = reviews
                     )
                 }
 
@@ -273,7 +260,9 @@ fun DetailScreen(
                                     product = relatedProd,
                                     modifier = Modifier.width(160.dp),
                                     onClick = { navController.navigate(Screen.Detail.createRoute(relatedProd.id)) },
-                                    onAddToCart = { /* Xử lý tuỳ chọn */ }
+                                    onAddToCart = { _ ->
+                                        relatedProductToAddToCart = relatedProd
+                                    }
                                 )
                             }
                         }
@@ -301,23 +290,16 @@ fun DetailScreen(
                     }
                 )
             }
-            if (reviewIdToDelete != null) {
-                AlertDialog(
-                    onDismissRequest = { reviewIdToDelete = null },
-                    containerColor = Color.White,
-                    title = { Text("Xác nhận xóa", fontWeight = FontWeight.Bold) },
-                    text = { Text("Bạn có chắc chắn muốn xóa bình luận này không? Hành động này không thể hoàn tác.") },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                viewModel.deleteComment(reviewIdToDelete!!)
-                                reviewIdToDelete = null
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = GunplaRed)
-                        ) { Text("Xóa") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { reviewIdToDelete = null }) { Text("Hủy", color = Color.Gray) }
+            if (relatedProductToAddToCart != null) {
+                AddToCartSheet(
+                    product = relatedProductToAddToCart!!,
+                    onDismiss = { relatedProductToAddToCart = null },
+                    confirmButtonText = "THÊM VÀO GIỎ",
+                    onConfirm = { quantity ->
+                        viewModel.addRelatedToCart(relatedProductToAddToCart!!, quantity) { success, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                        relatedProductToAddToCart = null
                     }
                 )
             }

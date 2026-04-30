@@ -30,11 +30,17 @@ class MyVoucherViewModel @Inject constructor(
     }
 
     fun fetchMyVouchers() {
+        if (currentUserId.isEmpty()) return
+
         viewModelScope.launch {
             _isLoading.value = true
 
             voucherRepository.getUserVouchers(currentUserId).onSuccess { mySavedVouchers ->
-                val voucherIds = mySavedVouchers.map { it.voucherId }.distinct()
+                val voucherIds = mySavedVouchers
+                    .mapNotNull { it.voucherId }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+
                 if (voucherIds.isEmpty()) {
                     _myVouchers.value = emptyList()
                     _isLoading.value = false
@@ -58,19 +64,48 @@ class MyVoucherViewModel @Inject constructor(
             _isLoading.value = false
         }
     }
-
     fun claimVoucherByCode(code: String, onResult: (Boolean, String) -> Unit) {
+        if (code.isBlank()) {
+            onResult(false, "Vui lòng nhập mã Voucher!")
+            return
+        }
+
         viewModelScope.launch {
+            _isLoading.value = true
             voucherRepository.getVoucherByCode(code.uppercase().trim()).onSuccess { voucher ->
+                if (!voucher.isActive) {
+                    onResult(false, "Mã giảm giá này đã bị vô hiệu hóa!")
+                    _isLoading.value = false
+                    return@launch
+                }
+                val currentTime = System.currentTimeMillis()
+                if (voucher.startDate > currentTime) {
+                    onResult(false, "Mã này chưa đến giờ sử dụng!")
+                    _isLoading.value = false
+                    return@launch
+                }
+                if (voucher.expirationDate in 1..<currentTime) {
+                    onResult(false, "Mã giảm giá này đã hết hạn!")
+                    _isLoading.value = false
+                    return@launch
+                }
+
+                if (voucher.usageLimit > 0 && voucher.usedCount >= voucher.usageLimit) {
+                    onResult(false, "Mã giảm giá này đã được nhập hết!")
+                    _isLoading.value = false
+                    return@launch
+                }
                 voucherRepository.claimVoucher(currentUserId, voucher).onSuccess {
                     fetchMyVouchers()
-                    onResult(true, "Lưu mã thành công!")
+                    onResult(true, "🎉 Lưu mã thành công! Bạn có thể áp dụng trong Giỏ hàng.")
                 }.onFailure {
-                    onResult(false, it.message ?: "Lỗi khi lưu mã")
+                    onResult(false, it.message ?: "Mã này đã có trong ví của bạn!")
                 }
+
             }.onFailure {
-                onResult(false, "Mã không tồn tại hoặc đã hết hạn")
+                onResult(false, "Mã không tồn tại hoặc đã bị xóa!")
             }
+            _isLoading.value = false
         }
     }
 }

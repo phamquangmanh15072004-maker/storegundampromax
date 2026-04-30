@@ -11,7 +11,6 @@ import com.cloudinary.android.callback.UploadCallback
 import com.example.storepromax.domain.model.Product
 import com.example.storepromax.domain.repository.ReviewRepository
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -51,19 +50,21 @@ class WriteReviewViewModel @Inject constructor(
                 val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@launch
                 val orderSnapshot = firestore.collection("orders").document(orderId).get().await()
                 val items = orderSnapshot.get("items") as? List<Map<String, Any>>
+
+                val reviewedProductsInOrder = orderSnapshot.get("reviewedProducts") as? List<String> ?: emptyList()
+
                 if (items == null) {
                     _productsToReview.value = emptyList()
                     return@launch
                 }
-                val userReviewsSnapshot = firestore.collection("reviews")
-                    .whereEqualTo("userId", userId)
-                    .get().await()
-                val alreadyReviewedProductIds = userReviewsSnapshot.documents.mapNotNull { it.getString("productId") }.toSet()
+
+                val uniqueProductIdsInOrder = items.mapNotNull {
+                    val productMap = it["product"] as? Map<String, Any>
+                    productMap?.get("id") as? String
+                }.toSet()
                 val productList = mutableListOf<Product>()
-                for (item in items) {
-                    val productMap = item["product"] as? Map<String, Any>
-                    val productId = productMap?.get("id") as? String ?: continue
-                    if (alreadyReviewedProductIds.contains(productId)) {
+                for (productId in uniqueProductIdsInOrder) {
+                    if (reviewedProductsInOrder.contains(productId)) {
                         continue
                     }
 
@@ -73,11 +74,6 @@ class WriteReviewViewModel @Inject constructor(
                         productList.add(product.copy(id = productSnapshot.id))
                     }
                 }
-                if (productList.isEmpty()) {
-                    firestore.collection("orders").document(orderId)
-                        .update("status", "COMPLETED_REVIEWED")
-                }
-
                 _productsToReview.value = productList
 
             } catch (e: Exception) {
@@ -107,28 +103,28 @@ class WriteReviewViewModel @Inject constructor(
                     onResult(false, "Lỗi tải ảnh/video!")
                     return@launch
                 }
-
-                reviewRepository.submitComment(productId, text, null, rating, cloudUrls)
-
-                firestore.collection("orders").document(orderId)
-                    .update("reviewedProducts", FieldValue.arrayUnion(productId))
-                    .await()
+                reviewRepository.submitComment(
+                    productId = productId,
+                    content = text,
+                    parentId = null,
+                    rating = rating,
+                    mediaUrls = cloudUrls,
+                    orderId = orderId
+                )
 
                 onResult(true, "Đánh giá thành công!")
             } catch (e: Exception) {
                 e.printStackTrace()
-                onResult(false, "Lỗi gửi đánh giá!")
+                onResult(false, e.message ?: "Lỗi gửi đánh giá!")
             }
         }
     }
 
     private suspend fun uploadOneMedia(uriString: String): String? {
         val uri = Uri.parse(uriString)
-
         val isVideo = uriString.contains("video", ignoreCase = true) ||
                 uriString.endsWith(".mp4") ||
                 uriString.endsWith(".mov")
-
         val resourceType = if (isVideo) "video" else "image"
 
         return suspendCancellableCoroutine { continuation ->

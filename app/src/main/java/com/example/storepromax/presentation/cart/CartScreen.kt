@@ -1,6 +1,8 @@
 package com.example.storepromax.presentation.cart
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,11 +16,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,6 +50,7 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.CartItem
 import com.example.storepromax.domain.model.Voucher
+import com.example.storepromax.presentation.checkout.AlertRed
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.DecimalFormat
@@ -252,11 +257,9 @@ fun VoucherBottomSheet(
                 if (freeshipVouchers.isNotEmpty()) {
                     item { Text("Miễn Phí Vận Chuyển", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
                     items(freeshipVouchers) { voucher ->
-                        val isEligible = currentSubTotal >= voucher.minOrderValue && voucher.usedCount < voucher.usageLimit
                         VoucherTicket(
                             voucher = voucher,
                             isSelected = selectedFreeship?.id == voucher.id,
-                            isEligible = isEligible,
                             currentSubTotal = currentSubTotal,
                             iconBgColor = TealFreeship,
                             icon = Icons.Default.LocalShipping,
@@ -267,11 +270,9 @@ fun VoucherBottomSheet(
                 if (discountVouchers.isNotEmpty()) {
                     item { Text("Giảm Giá Đơn Hàng", fontWeight = FontWeight.Bold, color = Color.DarkGray, fontSize = 14.sp) }
                     items(discountVouchers) { voucher ->
-                        val isEligible = currentSubTotal >= voucher.minOrderValue && voucher.usedCount < voucher.usageLimit
                         VoucherTicket(
                             voucher = voucher,
                             isSelected = selectedDiscount?.id == voucher.id,
-                            isEligible = isEligible,
                             currentSubTotal = currentSubTotal,
                             iconBgColor = GunplaBlue,
                             icon = Icons.Default.ConfirmationNumber,
@@ -286,8 +287,12 @@ fun VoucherBottomSheet(
 }
 @Composable
 fun VoucherTicket(
-    voucher: Voucher, isSelected: Boolean, isEligible: Boolean, currentSubTotal: Long,
-    iconBgColor: Color, icon: ImageVector, onSelect: () -> Unit
+    voucher: Voucher,
+    isSelected: Boolean = false,
+    currentSubTotal: Long = 0L,
+    iconBgColor: Color,
+    icon: ImageVector,
+    onSelect: () -> Unit
 ) {
     val formatter = DecimalFormat("#,###")
     val progress = if (voucher.usageLimit > 0) {
@@ -295,61 +300,149 @@ fun VoucherTicket(
     } else 0f
     val percentString = (progress * 100).toInt()
 
+    val currentTime = System.currentTimeMillis()
+    val isNotStarted = voucher.startDate > currentTime
+    val isDeactivated = !voucher.isActive
+    val isExpired = voucher.expirationDate < currentTime && voucher.expirationDate > 0L
+    val isDepleted = voucher.usedCount >= voucher.usageLimit
+    val isNotEnoughValue = currentSubTotal > 0L && currentSubTotal < voucher.minOrderValue
+    val canUse = !isDeactivated && !isNotStarted && !isExpired && !isDepleted && !isNotEnoughValue
+    val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
+    val timeLabel = when {
+        isNotStarted -> "Có hiệu lực từ: ${sdf.format(java.util.Date(voucher.startDate))}"
+        isExpired -> "Đã hết hạn"
+        voucher.expirationDate > 0 -> "Có hiêu lực: ${sdf.format(java.util.Date(voucher.expirationDate))}"
+        else -> "Không thời hạn"
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .alpha(if (isEligible) 1f else 0.5f)
-            .clickable(enabled = isEligible) { onSelect() }
+            .height(105.dp)
+            .alpha(if (canUse) 1f else 0.5f)
+            .clickable(enabled = canUse) { onSelect() }
             .padding(bottom = 8.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(8.dp),
-        elevation = CardDefaults.cardElevation(2.dp)
+        shape = RoundedCornerShape(4.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(0.5.dp, Color(0xFFE0E0E0))
     ) {
-        Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        Row(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(90.dp)
-                    .background(if (isEligible) iconBgColor else Color.Gray),
+                    .width(96.dp)
+                    .background(if (canUse) iconBgColor else Color(0xFF9E9E9E)),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(vertical = 16.dp)) {
-                    Icon(icon, null, tint = Color.White, modifier = Modifier.size(28.dp))
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(if (voucher.type == "FREESHIP") "FREESHIP" else "DISCOUNT", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(icon, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = if (voucher.type == "FREESHIP") "FREESHIP" else "DISCOUNT",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
                 }
             }
-            Column(
-                modifier = Modifier.weight(1f).padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+
+            Canvas(modifier = Modifier.fillMaxHeight().width(1.dp)) {
+                drawLine(
+                    color = Color(0xFFE0E0E0),
+                    start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                    end = androidx.compose.ui.geometry.Offset(0f, size.height),
+                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically // Căn giữa toàn bộ theo chiều dọc
             ) {
-                Text(voucher.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (isEligible) {
-                    Text("Đơn tối thiểu ₫${formatter.format(voucher.minOrderValue)}", color = Color.Gray, fontSize = 11.sp)
-                } else {
-                    if (voucher.usedCount >= voucher.usageLimit) {
-                        Text("Đã hết lượt sử dụng", color = AlertRed, fontSize = 11.sp)
-                    } else {
-                        Text("Mua thêm ₫${formatter.format(voucher.minOrderValue - currentSubTotal)} để áp dụng", color = AlertRed, fontSize = 11.sp)
+                Column(
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = voucher.title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = Color(0xFF222222),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 20.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "Đơn tối thiểu ₫${formatter.format(voucher.minOrderValue)}",
+                        color = Color(0xFF757575),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = null,
+                            tint = if (isNotStarted) AlertRed else Color(0xFF9E9E9E),
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = timeLabel,
+                            color = if (isNotStarted) AlertRed else Color(0xFF9E9E9E),
+                            fontSize = 11.sp
+                        )
+                    }
+                    if (!isDeactivated && !isExpired && !isNotStarted && voucher.usageLimit > 0) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth(0.8f)) {
+                            LinearProgressIndicator(
+                                progress = progress,
+                                modifier = Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(100.dp)),
+                                color = if (progress >= 0.9f) AlertRed else iconBgColor,
+                                trackColor = Color(0xFFEEEEEE)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (isDepleted) "Hết mã" else "Đã dùng $percentString%", fontSize = 9.sp, color = if (isDepleted) AlertRed else Color.Gray)
+                        }
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    LinearProgressIndicator(
-                        progress = progress,
-                        modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
-                        color = if (progress >= 0.9f) AlertRed else iconBgColor, // Đỏ lên nếu sắp hết mã
-                        trackColor = Color(0xFFEEEEEE)
+                if (currentSubTotal == 0L && !isSelected) {
+                    OutlinedButton(
+                        onClick = { if (canUse) onSelect() },
+                        enabled = canUse,
+                        modifier = Modifier
+                            .height(32.dp)
+                            .widthIn(min = 70.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        shape = RoundedCornerShape(4.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = iconBgColor,
+                            disabledContentColor = Color(0xFFBDBDBD)
+                        ),
+                        border = BorderStroke(1.dp, if (canUse) iconBgColor else Color(0xFFE0E0E0))
+                    ) {
+                        Text(
+                            text = if (isNotStarted) "Lưu" else "Dùng",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = null,
+                        colors = CheckboxDefaults.colors(checkedColor = iconBgColor),
+                        modifier = Modifier.size(24.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Đã dùng $percentString%", fontSize = 10.sp, color = Color.Gray)
                 }
             }
-            Checkbox(
-                checked = isSelected,
-                onCheckedChange = null,
-                colors = CheckboxDefaults.colors(checkedColor = iconBgColor),
-                modifier = Modifier.align(Alignment.CenterVertically).padding(end = 8.dp)
-            )
         }
     }
 }

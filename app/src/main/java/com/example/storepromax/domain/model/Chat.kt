@@ -21,8 +21,10 @@ data class ChatChannel(
     val type: String = "SUPPORT",
     val blockedBy: List<String> = emptyList(),
     val receiverAvatar: String = "",
-    val lastSenderId: String = ""
+    val lastSenderId: String = "",
+    val unreadCounts: Map<String, Int> = emptyMap()
 )
+
 data class ChatMessage(
     val id: String = "",
     val channelId: String = "",
@@ -33,5 +35,6 @@ data class ChatMessage(
     val type: String = "TEXT",
     val mediaUrl: String = "",
     val replyToId: String? = null,
-    val deletedBy: List<String> = emptyList()
+    val deletedBy: List<String> = emptyList(),
+    val senderName: String? = null,
 )

@@ -65,6 +65,7 @@ fun ProfileScreen(
             .background(BgColor)
             .verticalScroll(scrollState)
     ) {
+        // --- HEADER CÁ NHÂN ---
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -126,7 +127,6 @@ fun ProfileScreen(
                     fontSize = 13.sp,
                     color = Color.White.copy(alpha = 0.8f)
                 )
-                Spacer(modifier = Modifier.height(8.dp))
             }
         }
         Column(
@@ -169,7 +169,7 @@ fun ProfileScreen(
                             navController.navigate(Screen.OrderHistory.createRoute(3))
                         }
                         OrderStatusItemModern(Icons.Outlined.CheckCircle, "Đánh giá", 0, Color(0xFF4CAF50)) {
-                            navController.navigate(Screen.OrderHistory.createRoute(4))
+                            navController.navigate(Screen.OrderHistory.createRoute(4)) // 🌟 Nút này trỏ đến Đơn hàng chờ đánh giá
                         }
                         OrderStatusItemModern(Icons.Outlined.AssignmentReturn, "Đổi trả", 0, TextSecondary) {
                             navController.navigate(Screen.OrderHistory.createRoute(5))
@@ -178,102 +178,28 @@ fun ProfileScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+            ModernSectionTitle("TIỆN ÍCH CỦA TÔI")
             Card(
                 colors = CardDefaults.cardColors(containerColor = CardColor),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { navController.navigate("wishlist") }
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFFFEBEE)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Favorite,
-                            contentDescription = null,
-                            tint = Color(0xFFFF3B30),
-                            modifier = Modifier.size(24.dp)
-                        )
+                Column {
+                    ModernMenuItem(Icons.Default.Favorite, Color(0xFFFF3B30), "Sản phẩm yêu thích") {
+                        navController.navigate("wishlist")
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Sản phẩm yêu thích",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "Xem lại các sản phẩm đã lưu",
-                            fontSize = 12.sp,
-                            color = TextSecondary
-                        )
+                    ModernDivider()
+                    ModernMenuItem(Icons.Default.ConfirmationNumber, Color(0xFFFF9800), "Kho Voucher") {
+                        navController.navigate("my_voucher_screen")
                     }
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = Color.LightGray
-                    )
+                    ModernDivider()
+                    ModernMenuItem(Icons.Default.Star, Color(0xFFFFC107), "Đánh giá của tôi") {
+                        navController.navigate("my_reviews")
+                    }
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                colors = CardDefaults.cardColors(containerColor = CardColor),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { navController.navigate("my_voucher_screen") }
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFFFF3E0)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ConfirmationNumber,
-                            contentDescription = null,
-                            tint = Color(0xFFFF9800),
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Kho Voucher",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "Quản lý mã giảm giá, Freeship",
-                            fontSize = 12.sp,
-                            color = TextSecondary
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = Color.LightGray
-                    )
-                }
-            }
+
             Spacer(modifier = Modifier.height(24.dp))
             ModernSectionTitle("TÀI KHOẢN")
             Card(
@@ -289,8 +215,6 @@ fun ProfileScreen(
                     ModernMenuItem(Icons.Default.LockReset, Color(0xFFE91E63), "Đổi mật khẩu") {
                         navController.navigate("change_password")
                     }
-                    ModernDivider()
-                    ModernDivider()
                 }
             }
 
@@ -302,10 +226,9 @@ fun ProfileScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column {
-                    ModernMenuItem(Icons.Default.Notifications, Color(0xFFFFC107), "Thông báo") {
+                    ModernMenuItem(Icons.Default.Notifications, Color(0xFF8D6E63), "Thông báo") {
                         Toast.makeText(context, "Tính năng đang được phát triển!!!", Toast.LENGTH_SHORT).show()
                     }
-                    ModernDivider()
                     ModernDivider()
                     ModernMenuItem(Icons.Default.Security, Color(0xFF607D8B), "Chính sách & Bảo mật") {
                         navController.navigate("privacy_policy")
@@ -443,7 +366,7 @@ fun OrderStatusItemModern(
                         containerColor = Color(0xFFFF3B30),
                         contentColor = Color.White,
                         modifier = Modifier.offset(x = (-4).dp, y = 4.dp)
-                    ) { Text("$badge", fontWeight = FontWeight.Bold) }
+                    ) { Text(if (badge > 99) "99+" else "$badge", fontWeight = FontWeight.Bold) }
                 }
             }
         ) {
