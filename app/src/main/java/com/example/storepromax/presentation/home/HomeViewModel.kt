@@ -1,8 +1,11 @@
 package com.example.storepromax.presentation.home
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.storepromax.domain.model.BannerModel
 import com.example.storepromax.domain.model.Product
+import com.example.storepromax.domain.repository.BannerRepository
 import com.example.storepromax.domain.repository.CartRepository
 import com.example.storepromax.domain.repository.ChatRepository
 import com.example.storepromax.domain.repository.ProductRepository
@@ -20,9 +23,11 @@ class HomeViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val chatRepo: ChatRepository,
     private val cartRepository: CartRepository,
-    private val voucherRepository: VoucherRepository
+    private val voucherRepository: VoucherRepository,
+    private val bannerRepository: BannerRepository
 ) : ViewModel() {
-
+    private val _bannerList = MutableStateFlow<List<BannerModel>>(emptyList())
+    val bannerList = _bannerList.asStateFlow()
     private var _allProducts = mutableListOf<Product>()
 
     private val _products = MutableStateFlow<List<Product>>(emptyList())
@@ -69,8 +74,17 @@ class HomeViewModel @Inject constructor(
         loadGlobalNewArrivals()
         loadInitialProducts()
         loadVouchers()
+        loadBanners()
     }
-
+    private fun loadBanners() {
+        viewModelScope.launch {
+            bannerRepository.getActiveBanners().onSuccess { banners ->
+                _bannerList.value = banners
+            }.onFailure { e ->
+                Log.e("Banner_Error", "Lỗi tải banner: ${e.message}")
+            }
+        }
+    }
     fun loadInitialProducts(category: String = _selectedCategory.value) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -113,6 +127,7 @@ class HomeViewModel @Inject constructor(
             }
             loadGlobalNewArrivals()
             loadVouchers()
+            loadBanners()
         }
     }
     fun silentSyncProducts() {

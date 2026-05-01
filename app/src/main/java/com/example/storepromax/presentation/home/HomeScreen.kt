@@ -4,8 +4,10 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -16,6 +18,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,6 +35,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -43,11 +48,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
-import androidx.navigation.compose.currentBackStackEntryAsState
 import coil.compose.AsyncImage
+import com.example.storepromax.domain.model.BannerModel
 import com.example.storepromax.domain.model.Product
 import com.example.storepromax.feature.product_detail.components.AddToCartSheet
 import com.example.storepromax.presentation.admin.notification.NotificationViewModel
@@ -55,8 +58,10 @@ import com.example.storepromax.presentation.home.components.ProductItem
 import com.example.storepromax.presentation.navigation.Screen
 import com.example.storepromax.feature.product_detail.components.VoucherHomeSection
 import com.example.storepromax.presentation.main.MainViewModel
+import kotlinx.coroutines.CancellationException // 🌟 IMPORT QUAN TRỌNG ĐỂ FIX AUTO-SCROLL
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.absoluteValue
 
 val GunplaBlue = Color(0xFF0D47A1)
 val BgColor = Color(0xFFF2F4F7)
@@ -81,7 +86,6 @@ fun HomeScreen(
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     var productToAddToCart by remember { mutableStateOf<Product?>(null) }
 
-
     val currentSortBy by viewModel.currentSortBy.collectAsState()
     val currentIsAscending by viewModel.currentIsAscending.collectAsState()
     val currentMinPrice by viewModel.currentMinPrice.collectAsState()
@@ -89,11 +93,13 @@ fun HomeScreen(
 
     var flyingImageUrl by remember { mutableStateOf<String?>(null) }
     var flyingStartOffset by remember { mutableStateOf(Offset.Zero) }
+
     val voucherOnHome by viewModel.voucherOnHome.collectAsState()
     val userVoucherIds by viewModel.userVoucherIds.collectAsState()
+
     val gridState = rememberLazyGridState()
-    val coroutineScope = rememberCoroutineScope()
     val mainViewModel: MainViewModel = hiltViewModel(context as ComponentActivity)
+
     LaunchedEffect(Unit) {
         mainViewModel.scrollToTopEvent.collect { targetRoute ->
             if (targetRoute == "home") {
@@ -101,6 +107,7 @@ fun HomeScreen(
             }
         }
     }
+
     DisposableEffect(navController) {
         val listener = NavController.OnDestinationChangedListener { _, destination, _ ->
             if (destination.route == Screen.Home.route || destination.route == "home_screen") {
@@ -108,10 +115,9 @@ fun HomeScreen(
             }
         }
         navController.addOnDestinationChangedListener(listener)
-        onDispose {
-            navController.removeOnDestinationChangedListener(listener)
-        }
+        onDispose { navController.removeOnDestinationChangedListener(listener) }
     }
+
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
@@ -152,134 +158,156 @@ fun HomeScreen(
             }
         }
     ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize().padding(paddingValues).nestedScroll(nestedScrollConnection)) {
-
-            LazyVerticalGrid(
-                state = gridState,
-                columns = GridCells.Fixed(2),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                contentPadding = PaddingValues(top = 12.dp, bottom = 120.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                item(span = { GridItemSpan(2) }) {
-                    Column {
-                        HeaderSection(navController, unreadCount)
-                        Box(modifier = Modifier.padding(16.dp)) { BannerSection() }
-                        if (voucherOnHome.isNotEmpty()) {
-                            VoucherHomeSection(vouchers = voucherOnHome, userVoucherIds = userVoucherIds, onClaim = { voucher -> viewModel.claimVoucher(voucher) })
-                        }
-                    }
-                }
-
-                if (newArrivals.isNotEmpty() || (isLoading && newArrivals.isEmpty())) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = paddingValues.calculateBottomPadding())
+                .nestedScroll(nestedScrollConnection)
+        ) {
+            HeaderSection(navController, unreadCount)
+            Box(modifier = Modifier.weight(1f)) {
+                LazyVerticalGrid(
+                    state = gridState,
+                    columns = GridCells.Fixed(2),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
                     item(span = { GridItemSpan(2) }) {
-                        Column(modifier = Modifier.padding(bottom = 16.dp)) {
-                            PaddingBox { SectionTitle(title = "HÀNG MỚI VỀ 🔥") }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            LazyRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                if (isLoading && newArrivals.isEmpty()) {
-                                    items(3) { Box(modifier = Modifier.width(160.dp)) { ShimmerProductItem() } }
-                                } else {
-                                    itemsIndexed(items = newArrivals, key = { index, product -> "new_${product.id}_$index" }) { _, product ->
-                                        ProductItem(
-                                            product = product, modifier = Modifier.width(160.dp),
-                                            onClick = {
-                                                if (product.id.isNotBlank()) {
-                                                    navController.navigate(Screen.Detail.createRoute(product.id))
-                                                } else {
-                                                    Toast.makeText(context, "Lỗi: Sản phẩm này đang bị thiếu ID!", Toast.LENGTH_SHORT).show()
-                                                }
-                                            },
-
-                                            onAddToCart = { offset ->
-                                                productToAddToCart = product
-                                                flyingStartOffset = offset
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                item(span = { GridItemSpan(2) }) {
-                    Column {
-                        CategorySection(selectedCategory) { viewModel.selectCategory(it) }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        PaddingBox {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                SectionTitle(title = "GỢI Ý DÀNH CHO BẠN")
-                                IconButton(onClick = { showFilterSheet = true }) { Icon(Icons.Default.FilterList, "Lọc", tint = GunplaBlue) }
-                            }
-                        }
-                        ActiveFiltersRow(viewModel, currentSortBy, currentIsAscending, currentMinPrice, currentMaxPrice)
-                    }
-                }
-                if (isLoading && productList.isEmpty()) {
-                    item(span = { GridItemSpan(2) }) {
-                        Box(modifier = Modifier.fillMaxWidth().height(250.dp), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                CircularProgressIndicator(color = GunplaBlue, strokeWidth = 3.dp)
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text("Đang tải sản phẩm...", color = Color.Gray, fontSize = 14.sp)
-                            }
-                        }
-                    }
-                } else if (productList.isEmpty()) {
-                    item(span = { GridItemSpan(2) }) { EmptyStateMessage() }
-                } else {
-                    itemsIndexed(items = productList, key = { index, product -> "grid_${product.id}_$index" }) { index, product ->
-                        Box(modifier = Modifier.fillMaxWidth().padding(start = if (index % 2 == 0) 16.dp else 0.dp, end = if (index % 2 == 1) 16.dp else 0.dp)) {
-                            ProductItem(
-                                product = product, modifier = Modifier.fillMaxWidth(),
-                                onClick = {
-                                    if (product.id.isNotBlank()) {
-                                        navController.navigate(Screen.Detail.createRoute(product.id))
-                                    } else {
-                                        Toast.makeText(context, "Lỗi: Sản phẩm này đang bị thiếu ID!", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-
-                                onAddToCart = { offset ->
-                                    productToAddToCart = product
-                                    flyingStartOffset = offset
+                        Column {
+                            BannerSection(
+                                banners = viewModel.bannerList.collectAsState().value,
+                                onBannerClick = { targetId ->
+                                    navController.navigate(Screen.Detail.createRoute(targetId))
                                 }
                             )
+
+                            if (voucherOnHome.isNotEmpty()) {
+                                VoucherHomeSection(
+                                    vouchers = voucherOnHome,
+                                    userVoucherIds = userVoucherIds,
+                                    onClaim = { voucher -> viewModel.claimVoucher(voucher) },
+                                    onSeeAllClick = { navController.navigate("my_voucher_screen") }
+                                )
+                            }
                         }
                     }
-                }
-                if (isPaginating) {
                     item(span = { GridItemSpan(2) }) {
-                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = GunplaBlue, strokeWidth = 2.dp)
+                        Column {
+                            AnimatedVisibility(
+                                visible = newArrivals.isNotEmpty() || (isLoading && productList.isEmpty()),
+                                enter = fadeIn() + expandVertically(),
+                                exit = fadeOut() + shrinkVertically(animationSpec = tween(500))
+                            ) {
+                                Column(modifier = Modifier.padding(bottom = 16.dp)) {
+                                    PaddingBox { SectionTitle(title = "HÀNG MỚI VỀ 🔥") }
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    LazyRow(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentPadding = PaddingValues(horizontal = 16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        if (isLoading && newArrivals.isEmpty()) {
+                                            items(3) { Box(modifier = Modifier.width(160.dp)) { ShimmerProductItem() } }
+                                        } else {
+                                            itemsIndexed(items = newArrivals, key = { index, product -> "new_${product.id}_$index" }) { _, product ->
+                                                ProductItem(
+                                                    product = product, modifier = Modifier.width(160.dp),
+                                                    onClick = {
+                                                        if (product.id.isNotBlank()) navController.navigate(Screen.Detail.createRoute(product.id))
+                                                        else Toast.makeText(context, "Lỗi ID", Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    onAddToCart = { offset ->
+                                                        productToAddToCart = product
+                                                        flyingStartOffset = offset
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item(span = { GridItemSpan(2) }) {
+                        Column {
+                            CategorySection(selectedCategory) { viewModel.selectCategory(it) }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            PaddingBox {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    SectionTitle(title = "GỢI Ý DÀNH CHO BẠN")
+                                    IconButton(onClick = { showFilterSheet = true }) { Icon(Icons.Default.FilterList, "Lọc", tint = GunplaBlue) }
+                                }
+                            }
+                            ActiveFiltersRow(viewModel, currentSortBy, currentIsAscending, currentMinPrice, currentMaxPrice)
+                        }
+                    }
+                    if (isLoading && productList.isEmpty()) {
+                        items(6) { index ->
+                            Box(modifier = Modifier.fillMaxWidth().padding(start = if (index % 2 == 0) 16.dp else 0.dp, end = if (index % 2 == 1) 16.dp else 0.dp)) {
+                                ShimmerProductItem()
+                            }
+                        }
+                    } else if (productList.isEmpty()) {
+                        item(span = { GridItemSpan(2) }) { EmptyStateMessage() }
+                    } else {
+                        itemsIndexed(items = productList, key = { index, product -> "grid_${product.id}_$index" }) { index, product ->
+                            Box(modifier = Modifier.fillMaxWidth().padding(start = if (index % 2 == 0) 16.dp else 0.dp, end = if (index % 2 == 1) 16.dp else 0.dp)) {
+                                ProductItem(
+                                    product = product, modifier = Modifier.fillMaxWidth(),
+                                    onClick = {
+                                        if (product.id.isNotBlank()) navController.navigate(Screen.Detail.createRoute(product.id))
+                                        else Toast.makeText(context, "Lỗi ID", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onAddToCart = { offset ->
+                                        productToAddToCart = product
+                                        flyingStartOffset = offset
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    if (isPaginating) {
+                        item(span = { GridItemSpan(2) }) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = GunplaBlue, strokeWidth = 2.dp)
+                            }
                         }
                     }
                 }
-            }
-            AnimatedVisibility(
-                visible = isRefreshing,
-                enter = fadeIn() + slideInVertically(),
-                exit = fadeOut() + slideOutVertically(),
-                modifier = Modifier.align(Alignment.TopCenter)
-            ) {
-                Card(
-                    modifier = Modifier.padding(top = 16.dp).size(40.dp),
-                    shape = CircleShape,
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(6.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    contentAlignment = Alignment.TopCenter
                 ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = GunplaBlue, strokeWidth = 2.dp)
+                    Column {
+                        AnimatedVisibility(
+                            visible = isRefreshing,
+                            enter = fadeIn() + slideInVertically(),
+                            exit = fadeOut() + slideOutVertically()
+                        ) {
+                            Card(
+                                modifier = Modifier.size(40.dp),
+                                shape = CircleShape,
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                elevation = CardDefaults.cardElevation(6.dp)
+                            ) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = GunplaBlue,
+                                        strokeWidth = 2.dp
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
+
         if (productToAddToCart != null) {
             AddToCartSheet(
                 product = productToAddToCart!!, onDismiss = { productToAddToCart = null },
@@ -324,7 +352,6 @@ fun HomeScreen(
     }
 }
 
-// ... Các Components còn lại giữ nguyên (SupportSheetContent, HeaderSection, v.v...) ...
 @Composable
 fun SupportSheetContent(onChatCSKH: () -> Unit, onChatAI: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(24.dp).padding(bottom = 24.dp)) {
@@ -350,30 +377,165 @@ fun SupportCard(title: String, sub: String, icon: androidx.compose.ui.graphics.v
 
 @Composable
 fun HeaderSection(navController: NavController, unreadCount: Int) {
-    Box(modifier = Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(GunplaBlue, Color(0xFF1976D2)))).statusBarsPadding().padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(modifier = Modifier.weight(1f).height(50.dp).background(Color.White, CircleShape).clip(CircleShape).clickable { navController.navigate("search") }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Search, null, tint = GunplaBlue)
-                Spacer(modifier = Modifier.width(12.dp))
-                Text("Tìm kiếm Gundam...", color = Color.Gray, fontSize = 14.sp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(GunplaBlue, Color(0xFF1565C0))))
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.PrecisionManufacturing,
+                    contentDescription = "Logo",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "GUNPLA HUB",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.5.sp
+                )
             }
-            Spacer(modifier = Modifier.width(16.dp))
+
             IconButton(onClick = { navController.navigate("notification_screen") }) {
                 BadgedBox(badge = { if (unreadCount > 0) Badge { Text(if (unreadCount > 99) "99+" else unreadCount.toString()) } }) {
                     Icon(if (unreadCount > 0) Icons.Default.Notifications else Icons.Default.NotificationsNone, null, tint = Color.White, modifier = Modifier.size(28.dp))
                 }
             }
         }
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .background(Color.White, RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { navController.navigate("search") }
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Search, null, tint = GunplaBlue)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text("Tìm kiếm Gundam, Dụng cụ...", color = Color.Gray, fontSize = 14.sp)
+        }
     }
 }
 
 @Composable
-fun BannerSection() {
-    Card(modifier = Modifier.fillMaxWidth().height(180.dp).shadow(8.dp, RoundedCornerShape(16.dp)), shape = RoundedCornerShape(16.dp)) {
-        Box {
-            AsyncImage(model = "https://wallpaperaccess.com/full/19921.jpg", contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)))))
-            Text("NEW ARRIVALS\nGUNDAM AERIAL", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, modifier = Modifier.align(Alignment.BottomStart).padding(16.dp))
+fun BannerSection(
+    banners: List<BannerModel>,
+    onBannerClick: (String) -> Unit
+) {
+    if (banners.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .padding(horizontal = 16.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.LightGray.copy(alpha = 0.3f))
+        )
+        return
+    }
+
+    val startIndex = Int.MAX_VALUE / 2
+    val pagerState = rememberPagerState(
+        initialPage = startIndex,
+        pageCount = { Int.MAX_VALUE }
+    )
+    LaunchedEffect(banners.size) {
+        if (banners.size <= 1) return@LaunchedEffect
+
+        while (true) {
+            delay(3500)
+            if (!pagerState.isScrollInProgress) {
+                try {
+                    pagerState.animateScrollToPage(
+                        page = pagerState.currentPage + 1,
+                        animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing) // Cho trượt chậm lại 1s để mượt mắt hơn
+                    )
+                } catch (e: CancellationException) {
+                }
+            }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        HorizontalPager(
+            state = pagerState,
+            contentPadding = PaddingValues(horizontal = 64.dp),
+            pageSpacing = 0.dp,
+            modifier = Modifier.fillMaxWidth().height(180.dp)
+        ) { page ->
+            val actualPage = page % banners.size
+            val currentBanner = banners[actualPage]
+
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val pageOffset = (
+                                (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                                ).absoluteValue
+
+                        val fraction = 1f - pageOffset.coerceIn(0f, 1f)
+                        val scale = 0.8f + (fraction * 0.2f)
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = 0.5f + (fraction * 0.5f)
+                    }
+                    .clickable {
+                        if (currentBanner.targetId.isNotBlank()) onBannerClick(currentBanner.targetId)
+                    }
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AsyncImage(
+                        model = currentBanner.imageUrl,
+                        contentDescription = currentBanner.headline,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))))
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text = currentBanner.headline.uppercase(),
+                            color = Color.White,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 18.sp
+                        )
+                        if (currentBanner.subHeadline.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = currentBanner.subHeadline,
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ package com.example.storepromax.feature.product_detail.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -36,7 +37,8 @@ val AlertRed = Color(0xFFFF3B30)
 fun VoucherHomeSection(
     vouchers: List<Voucher>,
     userVoucherIds: List<String>,
-    onClaim: (Voucher) -> Unit
+    onClaim: (Voucher) -> Unit,
+    onSeeAllClick: () -> Unit
 ) {
     if (vouchers.isEmpty()) return
 
@@ -56,7 +58,8 @@ fun VoucherHomeSection(
                 text = "Xem tất cả",
                 color = GunplaBlue,
                 fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { onSeeAllClick() }
             )
         }
 
