@@ -1,18 +1,8 @@
 package com.example.storepromax.presentation.main
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.activity.ComponentActivity // 🌟 THÊM IMPORT NÀY
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,16 +10,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Newspaper
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material.icons.outlined.Chat
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Newspaper
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.ShoppingCart
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -60,28 +42,32 @@ import com.example.storepromax.presentation.profile.ProfileScreen
 val PrimaryBlue = Color(0xFF006AF5)
 val IconGray = Color(0xFF757575)
 
-// 🌟 1. CẬP NHẬT DATA CLASS (Thêm thuộc tính badgeCount)
 data class BottomNavItem(
     val title: String,
     val route: String,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
-    val badgeCount: Int = 0 // Mặc định là 0 (Không hiện)
+    val badgeCount: Int = 0
 )
 
 @Composable
-fun MainScreen(rootNavController: NavController) {
+fun MainScreen(
+    rootNavController: NavController,
+    mainViewModel: MainViewModel = hiltViewModel(LocalContext.current as ComponentActivity)
+) {
     val navController = rememberNavController()
-    val context = LocalContext.current
-    val mainViewModel: MainViewModel = hiltViewModel(context as androidx.activity.ComponentActivity)
+
     val unreadChatCount by mainViewModel.unreadChatCount.collectAsState(initial = 0)
-    val items = listOf(
-        BottomNavItem("Trang chủ", "home", Icons.Filled.Home, Icons.Outlined.Home),
-        BottomNavItem("Tin nhắn", "chat", Icons.Filled.Chat, Icons.Outlined.Chat, badgeCount = unreadChatCount),
-        BottomNavItem("Khám phá", "feed", Icons.Filled.Newspaper, Icons.Outlined.Newspaper),
-        BottomNavItem("Giỏ hàng", "cart", Icons.Filled.ShoppingCart, Icons.Outlined.ShoppingCart),
-        BottomNavItem("Tài khoản", "profile", Icons.Filled.Person, Icons.Outlined.Person),
-    )
+
+    val items = remember(unreadChatCount) {
+        listOf(
+            BottomNavItem("Trang chủ", "home", Icons.Filled.Home, Icons.Outlined.Home),
+            BottomNavItem("Tin nhắn", "chat", Icons.Filled.Chat, Icons.Outlined.Chat, badgeCount = unreadChatCount),
+            BottomNavItem("Khám phá", "feed", Icons.Filled.Newspaper, Icons.Outlined.Newspaper),
+            BottomNavItem("Giỏ hàng", "cart", Icons.Filled.ShoppingCart, Icons.Outlined.ShoppingCart),
+            BottomNavItem("Tài khoản", "profile", Icons.Filled.Person, Icons.Outlined.Person),
+        )
+    }
 
     Scaffold(
         containerColor = Color(0xFFF5F5F5),
@@ -94,6 +80,7 @@ fun MainScreen(rootNavController: NavController) {
                 currentRoute = currentRoute,
                 onItemClick = { item ->
                     if (item.route == currentRoute) {
+                        // Gọi sự kiện cuộn trang từ cùng 1 ViewModel với HomeScreen
                         if (item.route == "home" || item.route == "feed") {
                             mainViewModel.triggerScrollToTop(item.route)
                         }
@@ -299,7 +286,9 @@ fun StandardBottomNavItem(
         }
 
         Column(
-            modifier = Modifier.height(16.dp).offset(y = (-4).dp),
+            modifier = Modifier
+                .height(16.dp)
+                .offset(y = (-4).dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -58,10 +59,11 @@ import com.example.storepromax.presentation.home.components.ProductItem
 import com.example.storepromax.presentation.navigation.Screen
 import com.example.storepromax.feature.product_detail.components.VoucherHomeSection
 import com.example.storepromax.presentation.main.MainViewModel
-import kotlinx.coroutines.CancellationException // 🌟 IMPORT QUAN TRỌNG ĐỂ FIX AUTO-SCROLL
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
 
 val GunplaBlue = Color(0xFF0D47A1)
 val BgColor = Color(0xFFF2F4F7)
@@ -99,11 +101,16 @@ fun HomeScreen(
 
     val gridState = rememberLazyGridState()
     val mainViewModel: MainViewModel = hiltViewModel(context as ComponentActivity)
+    val density = LocalDensity.current
+
+    var headerOffsetHeightPx by remember { mutableFloatStateOf(0f) }
+    var pullRefreshDistance by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
         mainViewModel.scrollToTopEvent.collect { targetRoute ->
             if (targetRoute == "home") {
                 gridState.animateScrollToItem(0)
+                headerOffsetHeightPx = 0f
             }
         }
     }
@@ -116,17 +123,6 @@ fun HomeScreen(
         }
         navController.addOnDestinationChangedListener(listener)
         onDispose { navController.removeOnDestinationChangedListener(listener) }
-    }
-
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                if (available.y > 10f && gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0) {
-                    if (!isRefreshing) viewModel.refreshHomeData()
-                }
-                return Offset.Zero
-            }
-        }
     }
 
     val isAtBottom by remember {
@@ -158,154 +154,217 @@ fun HomeScreen(
             }
         }
     ) { paddingValues ->
-        Column(
+
+        // 🌟 TÍNH TOÁN KÍCH THƯỚC CHUẨN XÁC KHÔNG GÂY LỖI
+        val topPadding = paddingValues.calculateTopPadding()
+        val headerBaseHeight = 112.dp // Kích thước lõi của Header (không tính tai thỏ)
+        val totalHeaderHeight = headerBaseHeight + topPadding
+        val headerBaseHeightPx = with(density) { headerBaseHeight.toPx() } // Chỉ cho phép cuộn ẩn phần lõi, giữ lại phần tai thỏ
+
+        // 🌟 FIX LỖI JANK (GIẬT LAG): Đồng bộ vật lý cuộn
+        val nestedScrollConnection = remember(headerBaseHeightPx) {
+            object : NestedScrollConnection {
+                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    val delta = available.y
+                    val prevOffset = headerOffsetHeightPx
+                    headerOffsetHeightPx = (headerOffsetHeightPx + delta).coerceIn(-headerBaseHeightPx, 0f)
+
+                    // 🌟 CHÌA KHÓA CHỐNG GIẬT: Trả về số pixel mà Header đã tiêu thụ.
+                    // Ngăn chặn List cuộn đồng thời khi Header đang thu nhỏ.
+                    val consumed = headerOffsetHeightPx - prevOffset
+                    return Offset(0f, consumed)
+                }
+
+                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                    // Cải tiến kéo để làm mới: Yêu cầu lực kéo dài (>150px) để chống chạm nhầm khi Fling
+                    if (source == NestedScrollSource.Drag && available.y > 0) {
+                        if (gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0) {
+                            pullRefreshDistance += available.y
+                            if (pullRefreshDistance > 150f && !viewModel.isRefreshing.value) {
+                                viewModel.refreshHomeData()
+                                pullRefreshDistance = 0f
+                            }
+                        }
+                    }
+                    return Offset.Zero
+                }
+
+                override suspend fun onPreFling(available: Velocity): Velocity {
+                    pullRefreshDistance = 0f // Reset khoảng cách kéo khi nhấc tay
+                    return super.onPreFling(available)
+                }
+            }
+        }
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bottom = paddingValues.calculateBottomPadding())
                 .nestedScroll(nestedScrollConnection)
         ) {
-            HeaderSection(navController, unreadCount)
-            Box(modifier = Modifier.weight(1f)) {
-                LazyVerticalGrid(
-                    state = gridState,
-                    columns = GridCells.Fixed(2),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    item(span = { GridItemSpan(2) }) {
-                        Column {
-                            BannerSection(
-                                banners = viewModel.bannerList.collectAsState().value,
-                                onBannerClick = { targetId ->
-                                    navController.navigate(Screen.Detail.createRoute(targetId))
-                                }
-                            )
-
-                            if (voucherOnHome.isNotEmpty()) {
-                                VoucherHomeSection(
-                                    vouchers = voucherOnHome,
-                                    userVoucherIds = userVoucherIds,
-                                    onClaim = { voucher -> viewModel.claimVoucher(voucher) },
-                                    onSeeAllClick = { navController.navigate("my_voucher_screen") }
-                                )
+            // 1. LỚP ĐÁY (Z-Index thấp nhất): GRID SẢN PHẨM
+            LazyVerticalGrid(
+                state = gridState,
+                columns = GridCells.Fixed(2),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(
+                    top = totalHeaderHeight + 16.dp, // Đẩy xuống an toàn để không đè Header
+                    bottom = 120.dp
+                ),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                item(span = { GridItemSpan(2) }) {
+                    Column {
+                        BannerSection(
+                            banners = viewModel.bannerList.collectAsState().value,
+                            onBannerClick = { targetId ->
+                                navController.navigate(Screen.Detail.createRoute(targetId))
                             }
+                        )
+
+                        if (voucherOnHome.isNotEmpty()) {
+                            VoucherHomeSection(
+                                vouchers = voucherOnHome,
+                                userVoucherIds = userVoucherIds,
+                                onClaim = { voucher -> viewModel.claimVoucher(voucher) },
+                                onSeeAllClick = { navController.navigate("my_voucher_screen") }
+                            )
                         }
                     }
-                    item(span = { GridItemSpan(2) }) {
-                        Column {
-                            AnimatedVisibility(
-                                visible = newArrivals.isNotEmpty() || (isLoading && productList.isEmpty()),
-                                enter = fadeIn() + expandVertically(),
-                                exit = fadeOut() + shrinkVertically(animationSpec = tween(500))
-                            ) {
-                                Column(modifier = Modifier.padding(bottom = 16.dp)) {
-                                    PaddingBox { SectionTitle(title = "HÀNG MỚI VỀ 🔥") }
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    LazyRow(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        contentPadding = PaddingValues(horizontal = 16.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        if (isLoading && newArrivals.isEmpty()) {
-                                            items(3) { Box(modifier = Modifier.width(160.dp)) { ShimmerProductItem() } }
-                                        } else {
-                                            itemsIndexed(items = newArrivals, key = { index, product -> "new_${product.id}_$index" }) { _, product ->
-                                                ProductItem(
-                                                    product = product, modifier = Modifier.width(160.dp),
-                                                    onClick = {
-                                                        if (product.id.isNotBlank()) navController.navigate(Screen.Detail.createRoute(product.id))
-                                                        else Toast.makeText(context, "Lỗi ID", Toast.LENGTH_SHORT).show()
-                                                    },
-                                                    onAddToCart = { offset ->
-                                                        productToAddToCart = product
-                                                        flyingStartOffset = offset
-                                                    }
-                                                )
-                                            }
+                }
+                item(span = { GridItemSpan(2) }) {
+                    Column {
+                        AnimatedVisibility(
+                            visible = newArrivals.isNotEmpty() || (isLoading && productList.isEmpty()),
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically(animationSpec = tween(500))
+                        ) {
+                            Column(modifier = Modifier.padding(bottom = 16.dp)) {
+                                PaddingBox { SectionTitle(title = "HÀNG MỚI VỀ 🔥") }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                LazyRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    if (isLoading && newArrivals.isEmpty()) {
+                                        items(3) { Box(modifier = Modifier.width(160.dp)) { ShimmerProductItem() } }
+                                    } else {
+                                        itemsIndexed(items = newArrivals, key = { index, product -> "new_${product.id}_$index" }) { _, product ->
+                                            ProductItem(
+                                                product = product, modifier = Modifier.width(160.dp),
+                                                onClick = {
+                                                    if (product.id.isNotBlank()) navController.navigate(Screen.Detail.createRoute(product.id))
+                                                    else Toast.makeText(context, "Lỗi ID", Toast.LENGTH_SHORT).show()
+                                                },
+                                                onAddToCart = { offset ->
+                                                    productToAddToCart = product
+                                                    flyingStartOffset = offset
+                                                }
+                                            )
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                    item(span = { GridItemSpan(2) }) {
-                        Column {
-                            CategorySection(selectedCategory) { viewModel.selectCategory(it) }
-                            Spacer(modifier = Modifier.height(16.dp))
-                            PaddingBox {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    SectionTitle(title = "GỢI Ý DÀNH CHO BẠN")
-                                    IconButton(onClick = { showFilterSheet = true }) { Icon(Icons.Default.FilterList, "Lọc", tint = GunplaBlue) }
+                }
+                item(span = { GridItemSpan(2) }) {
+                    Column {
+                        CategorySection(selectedCategory) { viewModel.selectCategory(it) }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        PaddingBox {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                SectionTitle(title = "GỢI Ý DÀNH CHO BẠN")
+                                IconButton(onClick = { showFilterSheet = true }) { Icon(Icons.Default.FilterList, "Lọc", tint = GunplaBlue) }
+                            }
+                        }
+                        ActiveFiltersRow(viewModel, currentSortBy, currentIsAscending, currentMinPrice, currentMaxPrice)
+                    }
+                }
+                if (isLoading && productList.isEmpty()) {
+                    items(6) { index ->
+                        Box(modifier = Modifier.fillMaxWidth().padding(start = if (index % 2 == 0) 16.dp else 0.dp, end = if (index % 2 == 1) 16.dp else 0.dp)) {
+                            ShimmerProductItem()
+                        }
+                    }
+                } else if (productList.isEmpty()) {
+                    item(span = { GridItemSpan(2) }) { EmptyStateMessage() }
+                } else {
+                    itemsIndexed(items = productList, key = { index, product -> "grid_${product.id}_$index" }) { index, product ->
+                        Box(modifier = Modifier.fillMaxWidth().padding(start = if (index % 2 == 0) 16.dp else 0.dp, end = if (index % 2 == 1) 16.dp else 0.dp)) {
+                            ProductItem(
+                                product = product, modifier = Modifier.fillMaxWidth(),
+                                onClick = {
+                                    if (product.id.isNotBlank()) navController.navigate(Screen.Detail.createRoute(product.id))
+                                    else Toast.makeText(context, "Lỗi ID", Toast.LENGTH_SHORT).show()
+                                },
+                                onAddToCart = { offset ->
+                                    productToAddToCart = product
+                                    flyingStartOffset = offset
                                 }
-                            }
-                            ActiveFiltersRow(viewModel, currentSortBy, currentIsAscending, currentMinPrice, currentMaxPrice)
-                        }
-                    }
-                    if (isLoading && productList.isEmpty()) {
-                        items(6) { index ->
-                            Box(modifier = Modifier.fillMaxWidth().padding(start = if (index % 2 == 0) 16.dp else 0.dp, end = if (index % 2 == 1) 16.dp else 0.dp)) {
-                                ShimmerProductItem()
-                            }
-                        }
-                    } else if (productList.isEmpty()) {
-                        item(span = { GridItemSpan(2) }) { EmptyStateMessage() }
-                    } else {
-                        itemsIndexed(items = productList, key = { index, product -> "grid_${product.id}_$index" }) { index, product ->
-                            Box(modifier = Modifier.fillMaxWidth().padding(start = if (index % 2 == 0) 16.dp else 0.dp, end = if (index % 2 == 1) 16.dp else 0.dp)) {
-                                ProductItem(
-                                    product = product, modifier = Modifier.fillMaxWidth(),
-                                    onClick = {
-                                        if (product.id.isNotBlank()) navController.navigate(Screen.Detail.createRoute(product.id))
-                                        else Toast.makeText(context, "Lỗi ID", Toast.LENGTH_SHORT).show()
-                                    },
-                                    onAddToCart = { offset ->
-                                        productToAddToCart = product
-                                        flyingStartOffset = offset
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    if (isPaginating) {
-                        item(span = { GridItemSpan(2) }) {
-                            Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = GunplaBlue, strokeWidth = 2.dp)
-                            }
+                            )
                         }
                     }
                 }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    contentAlignment = Alignment.TopCenter
-                ) {
-                    Column {
-                        AnimatedVisibility(
-                            visible = isRefreshing,
-                            enter = fadeIn() + slideInVertically(),
-                            exit = fadeOut() + slideOutVertically()
+                if (isPaginating) {
+                    item(span = { GridItemSpan(2) }) {
+                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = GunplaBlue, strokeWidth = 2.dp)
+                        }
+                    }
+                }
+            } // Hết Grid
+
+            // 2. LỚP GIỮA: REFRESH ICON
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = totalHeaderHeight + with(density) { headerOffsetHeightPx.toDp() } + 16.dp),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                Column {
+                    AnimatedVisibility(
+                        visible = isRefreshing,
+                        enter = fadeIn() + slideInVertically(),
+                        exit = fadeOut() + slideOutVertically()
+                    ) {
+                        Card(
+                            modifier = Modifier.size(40.dp),
+                            shape = CircleShape,
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(6.dp)
                         ) {
-                            Card(
-                                modifier = Modifier.size(40.dp),
-                                shape = CircleShape,
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
-                                elevation = CardDefaults.cardElevation(6.dp)
-                            ) {
-                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        color = GunplaBlue,
-                                        strokeWidth = 2.dp
-                                    )
-                                }
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = GunplaBlue,
+                                    strokeWidth = 2.dp
+                                )
                             }
                         }
                     }
                 }
             }
+
+            // 3. LỚP TRÊN: HEADER CUỘN
+            HeaderSection(
+                navController = navController,
+                unreadCount = unreadCount,
+                topPadding = topPadding,
+                modifier = Modifier.offset { IntOffset(x = 0, y = headerOffsetHeightPx.roundToInt()) }
+            )
+
+            // 4. LỚP CAO NHẤT (BẢO VỆ STATUS BAR): Triệt tiêu khoảng trắng khi cuộn
+            // Khối màu xanh này được ghim vĩnh viễn ở trên cùng, che đi phần trống khi Header thụt lên
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(topPadding)
+                    .background(GunplaBlue)
+                    .align(Alignment.TopCenter)
+            )
         }
 
         if (productToAddToCart != null) {
@@ -376,12 +435,12 @@ fun SupportCard(title: String, sub: String, icon: androidx.compose.ui.graphics.v
 }
 
 @Composable
-fun HeaderSection(navController: NavController, unreadCount: Int) {
+fun HeaderSection(navController: NavController, unreadCount: Int, topPadding: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(Brush.verticalGradient(listOf(GunplaBlue, Color(0xFF1565C0))))
-            .statusBarsPadding()
+            .padding(top = topPadding)
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Row(
@@ -461,7 +520,7 @@ fun BannerSection(
                 try {
                     pagerState.animateScrollToPage(
                         page = pagerState.currentPage + 1,
-                        animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing) // Cho trượt chậm lại 1s để mượt mắt hơn
+                        animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing)
                     )
                 } catch (e: CancellationException) {
                 }

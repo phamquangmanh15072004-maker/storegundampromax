@@ -17,4 +17,5 @@ interface AuthRepository {
     fun logout()
     suspend fun updateUserRole(userId: String, newRole: String): Result<Boolean>
     suspend fun getUserDetails(userId: String): Result<User>
+    fun observeCurrentUserLockStatus(userId: String): Flow<Boolean>
 }

@@ -50,10 +50,11 @@ class AuthRepositoryImpl @Inject constructor(
                 "id" to userId,
                 "email" to email,
                 "name" to name,
-                "role" to "user",
+                "role" to "USER",
                 "phone" to "",
                 "shippingAddress" to "",
-                "createdAt" to System.currentTimeMillis()
+                "createdAt" to System.currentTimeMillis(),
+                "lastActive" to System.currentTimeMillis()
             )
             firestore.collection("users").document(userId).set(userMap).await()
             Result.success(Unit)
@@ -135,5 +136,17 @@ class AuthRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+    override fun observeCurrentUserLockStatus(userId: String): Flow<Boolean> = callbackFlow {
+        val subscription = firestore.collection("users").document(userId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val isLocked = snapshot?.getBoolean("isLocked") ?: false
+                trySend(isLocked)
+            }
+        awaitClose { subscription.remove() }
     }
 }

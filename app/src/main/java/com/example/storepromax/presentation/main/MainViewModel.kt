@@ -17,14 +17,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class UserStatusState(
+    val isLocked: Boolean = false,
+    val reason: String = "Tài khoản của bạn đã bị khóa."
+)
+
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore
 ) : ViewModel() {
-
-    private val _isUserBanned = MutableStateFlow(false)
-    val isUserBanned = _isUserBanned.asStateFlow()
+    private val _userStatus = MutableStateFlow(UserStatusState())
+    val userStatus = _userStatus.asStateFlow()
 
     private val _unreadChatCount = MutableStateFlow(0)
     val unreadChatCount = _unreadChatCount.asStateFlow()
@@ -35,9 +39,17 @@ class MainViewModel @Inject constructor(
     private val _scrollToTopEvent = MutableSharedFlow<String>()
     val scrollToTopEvent = _scrollToTopEvent.asSharedFlow()
 
+    private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+        if (firebaseAuth.currentUser != null) {
+            monitorUserStatus()
+            monitorUnreadChats()
+        } else {
+            stopMonitoring()
+        }
+    }
+
     init {
-        monitorUserStatus()
-        monitorUnreadChats()
+        auth.addAuthStateListener(authStateListener)
     }
 
     fun triggerScrollToTop(route: String) {
@@ -46,8 +58,11 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun monitorUserStatus() {
+    private fun monitorUserStatus() {
         val uid = auth.currentUser?.uid ?: return
+
+        userListener?.remove()
+
         userListener = firestore.collection("users").document(uid)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -55,12 +70,22 @@ class MainViewModel @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null && snapshot.exists()) {
-                    _isUserBanned.value = snapshot.getBoolean("isBanned") ?: false
+                    val isLocked = snapshot.getBoolean("isLocked") ?: false
+                    val lockReason = snapshot.getString("lockReason")
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "Vi phạm chính sách hệ thống"
+
+                    _userStatus.value = UserStatusState(
+                        isLocked = isLocked,
+                        reason = lockReason
+                    )
                 }
             }
     }
     private fun monitorUnreadChats() {
         val uid = auth.currentUser?.uid ?: return
+
+        chatListener?.remove()
 
         chatListener = firestore.collection("channels")
             .where(
@@ -106,5 +131,11 @@ class MainViewModel @Inject constructor(
         stopMonitoring()
         auth.signOut()
         onSuccess()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        auth.removeAuthStateListener(authStateListener)
+        stopMonitoring()
     }
 }

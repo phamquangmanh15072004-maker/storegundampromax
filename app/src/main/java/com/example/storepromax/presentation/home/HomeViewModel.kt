@@ -50,7 +50,7 @@ class HomeViewModel @Inject constructor(
 
     private var lastDocument: DocumentSnapshot? = null
     var isLastPage = false
-    private val pageSize = 4L
+    private val pageSize = 10L
 
     private val _currentSortBy = MutableStateFlow("createdAt")
     val currentSortBy = _currentSortBy.asStateFlow()
@@ -76,6 +76,7 @@ class HomeViewModel @Inject constructor(
         loadVouchers()
         loadBanners()
     }
+
     private fun loadBanners() {
         viewModelScope.launch {
             bannerRepository.getActiveBanners().onSuccess { banners ->
@@ -85,6 +86,7 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
+
     fun loadInitialProducts(category: String = _selectedCategory.value) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -107,6 +109,7 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
+
     fun refreshHomeData() {
         if (_isRefreshing.value) return
         viewModelScope.launch {
@@ -130,6 +133,7 @@ class HomeViewModel @Inject constructor(
             loadBanners()
         }
     }
+
     fun silentSyncProducts() {
         if (_allProducts.isEmpty()) return
         viewModelScope.launch {
@@ -172,8 +176,6 @@ class HomeViewModel @Inject constructor(
 
     private fun loadGlobalNewArrivals() {
         viewModelScope.launch {
-            val sevenDaysAgo = System.currentTimeMillis() - (7L * 24 * 60 * 60 * 1000)
-
             productRepository.getProductsPaginated(
                 limit = 20,
                 lastDocument = null,
@@ -225,7 +227,6 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
-
     fun claimVoucher(voucher: com.example.storepromax.domain.model.Voucher) {
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
         if (uid.isEmpty()) return

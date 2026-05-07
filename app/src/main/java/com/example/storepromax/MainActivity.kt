@@ -2,12 +2,10 @@ package com.example.storepromax
 
 import AIChatScreen
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -19,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -73,7 +72,7 @@ import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.AndroidEntryPoint
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
-import java.util.jar.Manifest
+import javax.inject.Inject
 
 data class DeepLinkData(
     val type: String?,
@@ -84,16 +83,24 @@ data class DeepLinkData(
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var appLifecycleObserver: AppLifecycleObserver
+
     private var deepLinkData by mutableStateOf<DeepLinkData?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ProcessLifecycleOwner.get().lifecycle.addObserver(appLifecycleObserver)
         setContent {
             StorePromaxTheme {
                 val navController = rememberNavController()
                 val context = LocalContext.current
-                val currentUser = FirebaseAuth.getInstance().currentUser
                 val mainViewModel: MainViewModel = hiltViewModel()
-                val isBanned by mainViewModel.isUserBanned.collectAsState()
+                val userStatus by mainViewModel.userStatus.collectAsState()
+
+                val firebaseAuth = FirebaseAuth.getInstance()
+
                 LaunchedEffect(deepLinkData) {
                     deepLinkData?.let { data ->
                         try {
@@ -103,26 +110,19 @@ class MainActivity : ComponentActivity() {
                                 when (data.type) {
                                     "ORDER_UPDATE" -> {
                                         if (!data.orderId.isNullOrEmpty()) {
-                                          navController.navigate("order_history_screen/0") {
-                                                launchSingleTop = true
-                                            }
+                                            navController.navigate("order_history_screen/0") { launchSingleTop = true }
                                         }
                                     }
-
                                     "NEW_ORDER" -> {
                                         if (!data.orderId.isNullOrEmpty()) {
-                                            navController.navigate("admin_order_detail/${data.orderId}") {
-                                                launchSingleTop = true
-                                            }
+                                            navController.navigate("admin_order_detail/${data.orderId}") { launchSingleTop = true }
                                         }
                                     }
-
                                     "CHAT" -> {
                                         if (!data.channelId.isNullOrEmpty()) {
                                             navController.navigate("chat_detail/${data.channelId}")
                                         }
                                     }
-
                                     "CHAT_ADMIN" -> {
                                         if (!data.channelId.isNullOrEmpty()) {
                                             navController.navigate("admin_chat_detail/${data.channelId}")
@@ -136,26 +136,28 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                LaunchedEffect(currentUser) {
-                    if (currentUser != null) {
+
+                LaunchedEffect(Unit) {
+                    if (firebaseAuth.currentUser != null) {
                         saveFCMTokenToFirestore()
                     }
                 }
-                if (currentUser != null) {
-                    LaunchedEffect(isBanned) {
-                        if (isBanned) {
+                LaunchedEffect(userStatus.isLocked) {
+                    if (userStatus.isLocked && firebaseAuth.currentUser != null) {
+                        mainViewModel.logout {
                             navController.navigate(Screen.Login.route) {
-                                popUpTo(0) { inclusive = true }
+                                popUpTo(navController.graph.id) { inclusive = true }
                             }
                             Toast.makeText(
                                 context,
-                                "Phiên đăng nhập hết hạn hoặc tài khoản bị khóa!",
+                                "Tài khoản bị khóa: ${userStatus.reason}",
                                 Toast.LENGTH_LONG
                             ).show()
                         }
                     }
                 }
-                val startDestination = if (FirebaseAuth.getInstance().currentUser != null) {
+
+                val startDestination = if (firebaseAuth.currentUser != null) {
                     Screen.Home.route
                 } else {
                     Screen.Welcome.route
@@ -193,12 +195,10 @@ class MainActivity : ComponentActivity() {
                     composable(Screen.Login.route) { LoginScreen(navController) }
                     composable(Screen.Register.route) { RegisterScreen(navController) }
                     composable(Screen.Home.route) { MainScreen(navController) }
-
                     composable(
                         route = Screen.Detail.route,
                         arguments = listOf(navArgument("productId") { type = NavType.StringType })
                     ) { DetailScreen(navController = navController) }
-
                     composable("search") { SearchScreen(navController = navController) }
                     composable("admin_dashboard") { AdminDashboardScreen(navController = navController) }
                     composable("admin_feed_approval") { AdminFeedApprovalScreen(navController = navController) }
@@ -206,7 +206,6 @@ class MainActivity : ComponentActivity() {
                     composable("feed") { FeedScreen(navController = navController) }
                     composable("admin_product_list") { AdminProductListScreen(navController) }
                     composable("add_product") { AddProductScreen(navController) }
-
                     composable(
                         route = "add_product?productId={productId}",
                         arguments = listOf(
@@ -220,7 +219,6 @@ class MainActivity : ComponentActivity() {
                         val productId = backStackEntry.arguments?.getString("productId")
                         AddProductScreen(navController = navController, productId = productId)
                     }
-
                     composable(
                         route = Screen.OrderHistory.route,
                         arguments = listOf(
@@ -242,7 +240,6 @@ class MainActivity : ComponentActivity() {
                         val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
                         AdminOrderDetailScreen(navController = navController, orderId = orderId)
                     }
-
                     composable("admin_order") { AdminOrderScreen(navController = navController) }
                     composable(
                         route = "admin_order_detail/{orderId}",
@@ -251,35 +248,23 @@ class MainActivity : ComponentActivity() {
                         val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
                         AdminOrderDetailScreen(navController = navController, orderId = orderId)
                     }
-
                     composable("admin_user") { AdminUserScreen(navController = navController) }
                     composable("admin_stats") { AdminStatsScreen(navController = navController) }
-                    composable("admin_chat_list") {
-                        AdminChatListScreen(navController = navController)
-                    }
-                    composable("user_chat_list") {
-                        UserChatListScreen(navController = navController)
-                    }
+                    composable("admin_chat_list") { AdminChatListScreen(navController = navController) }
+                    composable("user_chat_list") { UserChatListScreen(navController = navController) }
                     composable(
                         route = "chat_detail/{channelId}",
                         arguments = listOf(navArgument("channelId") { type = NavType.StringType })
                     ) { backStackEntry ->
                         val channelId = backStackEntry.arguments?.getString("channelId") ?: ""
-
-                        ChatDetailScreen(
-                            navController = navController,
-                            channelId = channelId
-                        )
+                        ChatDetailScreen(navController = navController, channelId = channelId)
                     }
                     composable(
                         route = "admin_chat_detail/{channelId}",
                         arguments = listOf(navArgument("channelId") { type = NavType.StringType })
                     ) { backStackEntry ->
                         val channelId = backStackEntry.arguments?.getString("channelId") ?: ""
-                        ChatDetailScreen(
-                            navController = navController,
-                            channelId = channelId
-                        )
+                        ChatDetailScreen(navController = navController, channelId = channelId)
                     }
                     composable(
                         route = "profile_detail/{userId}",
@@ -288,22 +273,15 @@ class MainActivity : ComponentActivity() {
                         )
                     ) { backStackEntry ->
                         val userId = backStackEntry.arguments?.getString("userId") ?: ""
-                        ProfileDetailScreen(
-                            navController = navController,
-                            targetUserId = userId
-                        )
+                        ProfileDetailScreen(navController = navController, targetUserId = userId)
                     }
-
-                    composable("edit_profile") {
-                        EditProfileScreen(navController = navController)
-                    }
+                    composable("edit_profile") { EditProfileScreen(navController = navController) }
                     composable(
                         route = "model_3d/{url}",
                         arguments = listOf(navArgument("url") { type = NavType.StringType })
                     ) { backStackEntry ->
                         val encodedUrl = backStackEntry.arguments?.getString("url") ?: ""
-                        val decodedUrl =
-                            URLDecoder.decode(encodedUrl, StandardCharsets.UTF_8.toString())
+                        val decodedUrl = URLDecoder.decode(encodedUrl, StandardCharsets.UTF_8.toString())
                         Model3DScreen(
                             glbUrl = decodedUrl,
                             onBackClick = { navController.popBackStack() }
@@ -314,15 +292,8 @@ class MainActivity : ComponentActivity() {
                         arguments = listOf(
                             navArgument("discountCode") { type = NavType.StringType; defaultValue = "" },
                             navArgument("freeshipCode") { type = NavType.StringType; defaultValue = "" },
-                            navArgument("productId") {
-                                type = NavType.StringType
-                                nullable = true
-                                defaultValue = null
-                            },
-                            navArgument("quantity") {
-                                type = NavType.IntType
-                                defaultValue = 1
-                            }
+                            navArgument("productId") { type = NavType.StringType; nullable = true; defaultValue = null },
+                            navArgument("quantity") { type = NavType.IntType; defaultValue = 1 }
                         )
                     ) { backStackEntry ->
                         val dCode = backStackEntry.arguments?.getString("discountCode")
@@ -340,58 +311,32 @@ class MainActivity : ComponentActivity() {
                     composable(
                         route = "cart_screen?showBack={showBack}",
                         arguments = listOf(
-                            navArgument("showBack") {
-                                type = NavType.BoolType
-                                defaultValue = false
-                            }
+                            navArgument("showBack") { type = NavType.BoolType; defaultValue = false }
                         )
                     ) { backStackEntry ->
                         val showBack = backStackEntry.arguments?.getBoolean("showBack") ?: false
-
                         CartScreen(navController = navController, showBackBtn = showBack)
                     }
-                    composable("recentlyviewed_screen") {
-                        RecentlyViewedScreen(navController = navController)
-                    }
+                    composable("recentlyviewed_screen") { RecentlyViewedScreen(navController = navController) }
                     composable("profile_tab") {
-                        val currentUserId =
-                            FirebaseAuth.getInstance().currentUser?.uid
-                                ?: ""
+                        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
                         if (currentUserId.isNotEmpty()) {
-                            ProfileDetailScreen(
-                                navController = navController,
-                                targetUserId = currentUserId
-                            )
-                        } else {
+                            ProfileDetailScreen(navController = navController, targetUserId = currentUserId)
                         }
                     }
                     composable(
                         route = "product_detail/{productId}",
                         arguments = listOf(navArgument("productId") { type = NavType.StringType })
-                    ) { backStackEntry ->
-                        val productId = backStackEntry.arguments?.getString("productId") ?: ""
-                        DetailScreen(
-                            navController = navController,
-                        )
-                    }
-                    composable("change_password") {
-                        ChangePasswordScreen(navController = navController)
-                    }
-                    composable("privacy_policy") {
-                        TermsPolicyScreen(navController = navController)
-                    }
-                    composable("about_us") {
-                        AboutScreen(navController = navController)
-                    }
-                    composable("wishlist") {
-                        WishlistScreen(navController = navController)
-                    }
+                    ) { DetailScreen(navController = navController) }
+                    composable("change_password") { ChangePasswordScreen(navController = navController) }
+                    composable("privacy_policy") { TermsPolicyScreen(navController = navController) }
+                    composable("about_us") { AboutScreen(navController = navController) }
+                    composable("wishlist") { WishlistScreen(navController = navController) }
                     composable(
                         route = "write_review_screen/{orderId}",
                         arguments = listOf(navArgument("orderId") { type = NavType.StringType })
-                    ) { backStackEntry ->
+                    ) {
                         val viewModel: WriteReviewViewModel = hiltViewModel()
-
                         val productsToReview by viewModel.productsToReview.collectAsState()
                         val isLoading by viewModel.isLoading.collectAsState()
 
@@ -404,14 +349,8 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
-                    composable("notification_screen") {
-                        NotificationScreen(
-                            navController = navController
-                        )
-                    }
-                    composable("ai_chat_screen") {
-                        AIChatScreen(navController = navController)
-                    }
+                    composable("notification_screen") { NotificationScreen(navController = navController) }
+                    composable("ai_chat_screen") { AIChatScreen(navController = navController) }
                     composable(
                         route = "post_detail/{postId}",
                         arguments = listOf(navArgument("postId") { type = NavType.StringType })
@@ -419,15 +358,9 @@ class MainActivity : ComponentActivity() {
                         val postId = backStackEntry.arguments?.getString("postId") ?: ""
                         PostDetailScreen(navController = navController, postId = postId)
                     }
-                    composable(route ="my_voucher_screen"){
-                        MyVoucherScreen(navController = navController)
-                    }
-                    composable(route ="admin_voucher"){
-                        AdminVoucherScreen(navController = navController)
-                    }
-                    composable("admin_voucher_form") {
-                        AdminVoucherFormScreen(navController = navController, voucherId = null)
-                    }
+                    composable(route ="my_voucher_screen"){ MyVoucherScreen(navController = navController) }
+                    composable(route ="admin_voucher"){ AdminVoucherScreen(navController = navController) }
+                    composable("admin_voucher_form") { AdminVoucherFormScreen(navController = navController, voucherId = null) }
                     composable(
                         route = "admin_voucher_form/{voucherId}",
                         arguments = listOf(navArgument("voucherId") { type = NavType.StringType })
@@ -441,20 +374,12 @@ class MainActivity : ComponentActivity() {
                     }
                     composable(
                         route = "order_history_screen/{tabIndex}",
-                        arguments = listOf(navArgument("tabIndex") {
-                            type = NavType.IntType
-                            defaultValue = 0
-                        })
+                        arguments = listOf(navArgument("tabIndex") { type = NavType.IntType; defaultValue = 0 })
                     ) { backStackEntry ->
                         val tabIndex = backStackEntry.arguments?.getInt("tabIndex") ?: 0
-                        OrderHistoryScreen(
-                            navController = navController,
-                            initialTabIndex = tabIndex
-                        )
+                        OrderHistoryScreen(navController = navController, initialTabIndex = tabIndex)
                     }
-                    composable("my_reviews") {
-                        MyReviewScreen(navController = navController)
-                    }
+                    composable("my_reviews") { MyReviewScreen(navController = navController) }
                 }
             }
         }
@@ -504,5 +429,10 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIntent(intent)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(appLifecycleObserver)
     }
 }
