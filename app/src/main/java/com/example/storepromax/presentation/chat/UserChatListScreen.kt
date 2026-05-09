@@ -1,51 +1,30 @@
 package com.example.storepromax.presentation.chat
 
-import android.content.Intent
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Chat
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.ChatChannel
-import com.example.storepromax.domain.model.ChatMessage
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
@@ -58,7 +37,12 @@ fun UserChatListScreen(
 ) {
     val myChats by viewModel.myChats.collectAsState()
     val currentUserId = viewModel.currentUserId
-
+    DisposableEffect(Unit) {
+        ChatStateManager.isChatListOpen = true
+        onDispose {
+            ChatStateManager.isChatListOpen = false
+        }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -174,27 +158,36 @@ fun UserChatRowItem(
                         Text(
                             text = channel.lastMessage,
                             fontSize = 14.sp,
-                            // 🌟 NỘI DUNG ĐEN ĐẬM NẾU CÓ TIN MỚI
                             color = if (hasUnread) Color.Black else Color.Gray,
                             fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.Normal,
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    // 🌟 CHẤM ĐỎ BÁO SỐ LƯỢNG TIN BÊN PHẢI (CHUẨN ZALO)
                     if (hasUnread) {
+                        val badgeText = if (myUnreadCount > 9) "9+" else myUnreadCount.toString()
+
                         Box(
                             modifier = Modifier
                                 .padding(start = 8.dp)
+                                .offset(y = (-1).dp)
                                 .defaultMinSize(minWidth = 20.dp)
                                 .height(20.dp)
                                 .background(Color(0xFFE53935), CircleShape)
-                                .padding(horizontal = 6.dp),
+                                .padding(horizontal = if (badgeText.length > 1) 6.dp else 0.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = if (myUnreadCount > 9) "9+" else myUnreadCount.toString(),
-                                color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold
+                                text = badgeText,
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                style = androidx.compose.ui.text.TextStyle(
+                                    platformStyle = androidx.compose.ui.text.PlatformTextStyle(
+                                        includeFontPadding = false
+                                    )
+                                )
                             )
                         }
                     }

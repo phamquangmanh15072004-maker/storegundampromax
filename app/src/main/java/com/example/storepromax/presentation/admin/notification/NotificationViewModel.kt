@@ -35,8 +35,12 @@ class NotificationViewModel @Inject constructor(
 
         viewModelScope.launch {
             repository.getUserNotifications(uid).collect { notifList ->
-                _notifications.value = notifList
-                _unreadCount.value = notifList.count { !it.isRead }
+                val filteredList = notifList.filter { notif ->
+                    notif.type != "CHAT_MESSAGE" && notif.type != "CHAT"
+                }
+
+                _notifications.value = filteredList
+                _unreadCount.value = filteredList.count { !it.isRead }
             }
         }
     }

@@ -55,7 +55,7 @@ fun WelcomeScreen(navController: NavController) {
             verticalArrangement = Arrangement.Bottom
         ) {
             Text(
-                text = "GUNDAM STORE",
+                text = "GUNPLA HUB STORE",
                 color = Color.White,
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,

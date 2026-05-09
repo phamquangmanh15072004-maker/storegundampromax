@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -155,28 +156,21 @@ fun HomeScreen(
         }
     ) { paddingValues ->
 
-        // 🌟 TÍNH TOÁN KÍCH THƯỚC CHUẨN XÁC KHÔNG GÂY LỖI
         val topPadding = paddingValues.calculateTopPadding()
-        val headerBaseHeight = 112.dp // Kích thước lõi của Header (không tính tai thỏ)
+        val headerBaseHeight = 112.dp
         val totalHeaderHeight = headerBaseHeight + topPadding
-        val headerBaseHeightPx = with(density) { headerBaseHeight.toPx() } // Chỉ cho phép cuộn ẩn phần lõi, giữ lại phần tai thỏ
-
-        // 🌟 FIX LỖI JANK (GIẬT LAG): Đồng bộ vật lý cuộn
+        val headerBaseHeightPx = with(density) { headerBaseHeight.toPx() }
         val nestedScrollConnection = remember(headerBaseHeightPx) {
             object : NestedScrollConnection {
                 override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                     val delta = available.y
                     val prevOffset = headerOffsetHeightPx
                     headerOffsetHeightPx = (headerOffsetHeightPx + delta).coerceIn(-headerBaseHeightPx, 0f)
-
-                    // 🌟 CHÌA KHÓA CHỐNG GIẬT: Trả về số pixel mà Header đã tiêu thụ.
-                    // Ngăn chặn List cuộn đồng thời khi Header đang thu nhỏ.
                     val consumed = headerOffsetHeightPx - prevOffset
                     return Offset(0f, consumed)
                 }
 
                 override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                    // Cải tiến kéo để làm mới: Yêu cầu lực kéo dài (>150px) để chống chạm nhầm khi Fling
                     if (source == NestedScrollSource.Drag && available.y > 0) {
                         if (gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0) {
                             pullRefreshDistance += available.y
@@ -190,7 +184,7 @@ fun HomeScreen(
                 }
 
                 override suspend fun onPreFling(available: Velocity): Velocity {
-                    pullRefreshDistance = 0f // Reset khoảng cách kéo khi nhấc tay
+                    pullRefreshDistance = 0f
                     return super.onPreFling(available)
                 }
             }
@@ -202,14 +196,13 @@ fun HomeScreen(
                 .padding(bottom = paddingValues.calculateBottomPadding())
                 .nestedScroll(nestedScrollConnection)
         ) {
-            // 1. LỚP ĐÁY (Z-Index thấp nhất): GRID SẢN PHẨM
             LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Fixed(2),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 contentPadding = PaddingValues(
-                    top = totalHeaderHeight + 16.dp, // Đẩy xuống an toàn để không đè Header
+                    top = totalHeaderHeight + 16.dp,
                     bottom = 120.dp
                 ),
                 modifier = Modifier.fillMaxSize()
@@ -315,9 +308,7 @@ fun HomeScreen(
                         }
                     }
                 }
-            } // Hết Grid
-
-            // 2. LỚP GIỮA: REFRESH ICON
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -347,17 +338,12 @@ fun HomeScreen(
                     }
                 }
             }
-
-            // 3. LỚP TRÊN: HEADER CUỘN
             HeaderSection(
                 navController = navController,
                 unreadCount = unreadCount,
                 topPadding = topPadding,
                 modifier = Modifier.offset { IntOffset(x = 0, y = headerOffsetHeightPx.roundToInt()) }
             )
-
-            // 4. LỚP CAO NHẤT (BẢO VỆ STATUS BAR): Triệt tiêu khoảng trắng khi cuộn
-            // Khối màu xanh này được ghim vĩnh viễn ở trên cùng, che đi phần trống khi Header thụt lên
             Spacer(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -466,8 +452,34 @@ fun HeaderSection(navController: NavController, unreadCount: Int, topPadding: an
             }
 
             IconButton(onClick = { navController.navigate("notification_screen") }) {
-                BadgedBox(badge = { if (unreadCount > 0) Badge { Text(if (unreadCount > 99) "99+" else unreadCount.toString()) } }) {
-                    Icon(if (unreadCount > 0) Icons.Default.Notifications else Icons.Default.NotificationsNone, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                BadgedBox(
+                    badge = {
+                        if (unreadCount > 0) {
+                            Badge(
+                                containerColor = Color(0xFFE53935),
+                                contentColor = Color.White,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .offset(x = (-8).dp, y = 8.dp)
+                            ) {
+                                Text(
+                                    text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                                    textAlign = TextAlign.Center,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                ) {
+                    IconButton(onClick = { navController.navigate("notification_screen") }) {
+                        Icon(
+                            imageVector = if (unreadCount > 0) Icons.Default.Notifications else Icons.Default.NotificationsNone,
+                            contentDescription = "Notifications",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
                 }
             }
         }

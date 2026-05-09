@@ -20,6 +20,7 @@ import com.example.storepromax.domain.repository.OrderRepository
 import com.example.storepromax.domain.repository.ProductRepository
 import com.example.storepromax.domain.repository.VoucherRepository
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -35,7 +36,8 @@ class CheckoutViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val voucherRepository: VoucherRepository,
     private val notificationRepository: NotificationRepository,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
     private var isBuyNowMode = false
@@ -313,18 +315,17 @@ class CheckoutViewModel @Inject constructor(
     fun submitOrder(onSuccess: () -> Unit, onShowPaymentPopup: (String, String, String, String, String) -> Unit) {
         val userId = auth.currentUser?.uid ?: ""
         val address = getFullAddress()
-
         if (name.value.isBlank() || phone.value.isBlank() || selectedProvince.value == null || selectedDistrict.value == null || selectedWard.value == null || specificAddress.value.isBlank()) {
             viewModelScope.launch { _uiEvent.send("Vui lòng chọn đầy đủ địa chỉ giao hàng!") }
             return
         }
-
         viewModelScope.launch {
             _isProcessing.value = true
             val finalTotal = finalTotalPrice.value
             val orderId = System.currentTimeMillis().toString().takeLast(9)
             val dCode = _selectedDiscountVoucher.value?.code?.takeIf { it.isNotBlank() }
             val fCode = _selectedFreeshipVoucher.value?.code?.takeIf { it.isNotBlank() }
+            val initialStatus = if (paymentMethod.value == "BANKING") "AWAITING_PAYMENT" else "PENDING"
 
             val newOrder = Order(
                 id = orderId,
@@ -337,16 +338,16 @@ class CheckoutViewModel @Inject constructor(
                 paymentMethod = paymentMethod.value,
                 shippingMethod = shippingMethod.value,
                 paymentStatus = "UNPAID",
-                status = "PENDING",
+                status = initialStatus,
                 createdAt = System.currentTimeMillis(),
                 discountCode = dCode,
                 freeshipCode = fCode
             )
-
             orderRepository.createOrder(newOrder, dCode, fCode).onSuccess {
                 if (!isBuyNowMode) {
                     _displayItems.value.forEach { cartRepository.removeFromCart(it.product.id) }
                 }
+                checkAndSaveUserProfile()
 
                 if (paymentMethod.value == "BANKING") {
                     try {
@@ -356,11 +357,8 @@ class CheckoutViewModel @Inject constructor(
                         if (response.isSuccessful && response.body()?.success == true) {
                             val body = response.body()!!
                             onShowPaymentPopup(
-                                body.checkoutUrl ?: "",
-                                body.bin ?: "",
-                                body.accountNumber ?: "",
-                                body.description ?: "",
-                                orderId
+                                body.checkoutUrl ?: "", body.bin ?: "", body.accountNumber ?: "",
+                                body.description ?: "", orderId
                             )
                             listenToOrderPaymentStatus(orderId, finalTotal.toDouble())
                         } else {
@@ -372,18 +370,35 @@ class CheckoutViewModel @Inject constructor(
                     }
                 } else {
                     notificationRepository.sendOrderNotificationToAdmin(orderId, finalTotal.toDouble())
-                    Log.d("DEBUG_NOTIF", "Bắt đầu gọi hàm gửi thông báo cho Admin!")
                     onSuccess()
                 }
-
             }.onFailure { error ->
                 _uiEvent.send(error.message ?: "Có lỗi xảy ra, vui lòng thử lại!")
             }
-
             _isProcessing.value = false
         }
     }
-
+    private fun checkAndSaveUserProfile() {
+        val userId = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            val user = userRepository.getUserProfile(userId)
+            if (user != null && (user.phone.isBlank() || user.provinceId == 0)) {
+                val updates = mapOf(
+                    "name" to name.value,
+                    "phone" to phone.value,
+                    "specificAddress" to specificAddress.value,
+                    "provinceId" to (selectedProvince.value?.provinceID ?: 0),
+                    "districtId" to (selectedDistrict.value?.districtID ?: 0),
+                    "wardCode" to (selectedWard.value?.wardCode ?: "")
+                )
+                try {
+                    firestore.collection("users").document(userId).update(updates)
+                } catch (e: Exception) {
+                    Log.e("Checkout", "Không thể cập nhật hồ sơ: ${e.message}")
+                }
+            }
+        }
+    }
     fun loadSelectedCartItems() {
         isBuyNowMode = false
         viewModelScope.launch {

@@ -9,6 +9,7 @@ import com.cloudinary.android.callback.UploadCallback
 import com.example.storepromax.domain.model.ChatChannel
 import com.example.storepromax.domain.model.ChatMessage
 import com.example.storepromax.domain.repository.ChatRepository
+import com.example.storepromax.domain.utils.NotificationHelper
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -99,8 +100,17 @@ class ChatDetailViewModel @Inject constructor(
                 "lastUpdated" to System.currentTimeMillis(),
                 "lastSenderId" to currentUserId
             )
+
             if (!partnerId.isNullOrBlank()) {
                 updateData["unreadCounts.$partnerId"] = FieldValue.increment(1)
+
+                val senderName = auth.currentUser?.displayName?.takeIf { it.isNotBlank() } ?: "Một người dùng"
+                NotificationHelper.sendChatPushNotification(
+                    receiverId = partnerId,
+                    senderName = senderName,
+                    messageContent = content,
+                    channelId = channelId
+                )
             }
 
             firestore.collection("channels").document(channelId).update(updateData)
@@ -125,7 +135,6 @@ class ChatDetailViewModel @Inject constructor(
 
                 firestore.collection("channels").document(channelId).collection("messages").document(messageId).set(newMessage)
 
-                // 🌟 TƯƠNG TỰ: TĂNG SỐ ĐẾM CỦA ĐỐI PHƯƠNG
                 val channel = _currentChannel.value
                 val partnerId = if (channel?.userId == currentUserId) channel.receiverId else channel?.userId
 
@@ -134,8 +143,17 @@ class ChatDetailViewModel @Inject constructor(
                     "lastUpdated" to System.currentTimeMillis(),
                     "lastSenderId" to currentUserId
                 )
+
                 if (!partnerId.isNullOrBlank()) {
                     updateData["unreadCounts.$partnerId"] = FieldValue.increment(1)
+
+                    val senderName = auth.currentUser?.displayName?.takeIf { it.isNotBlank() } ?: "Một người dùng"
+                    NotificationHelper.sendChatPushNotification(
+                        receiverId = partnerId,
+                        senderName = senderName,
+                        messageContent = content,
+                        channelId = channelId
+                    )
                 }
 
                 firestore.collection("channels").document(channelId).update(updateData)

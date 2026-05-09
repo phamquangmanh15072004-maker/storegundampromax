@@ -10,6 +10,7 @@ import android.media.RingtoneManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.example.storepromax.presentation.chat.ChatStateManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -21,11 +22,23 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
         Log.d("FCM_TEST", "Đã nhận tin nhắn từ: ${remoteMessage.from}")
+
         val data = remoteMessage.data
         val title = data["title"] ?: remoteMessage.notification?.title ?: "StoreProMax"
         val body = data["body"] ?: remoteMessage.notification?.body ?: "Bạn có thông báo mới"
         val type = data["type"] ?: ""
+        val channelId = data["channelId"] ?: ""
 
+        if (type == "CHAT_MESSAGE") {
+            if (channelId.isNotEmpty() && channelId == ChatStateManager.activeChannelId) {
+                Log.d("FCM_TEST", "Đang mở chat detail -> Chặn Push!")
+                return
+            }
+            if (ChatStateManager.isChatListOpen) {
+                Log.d("FCM_TEST", "Đang mở chat list -> Chặn Push!")
+                return
+            }
+        }
         showNotification(title, body, type, data)
     }
 
@@ -34,6 +47,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         Log.d("FCM_TOKEN", "Google vừa cấp Token mới: $token")
         sendTokenToServer(token)
     }
+
     private fun sendTokenToServer(token: String) {
         val currentUser = FirebaseAuth.getInstance().currentUser
 
@@ -58,13 +72,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         Log.d("NOTIFICATION_SERVICE", "Hiển thị thông báo! Type = $type")
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        val isChat = type.contains("CHAT")
-        val channelId = if (isChat) "storepromax_chats" else "storepromax_orders"
+        val isChat = type == "CHAT_MESSAGE"
+        val notifChannelId = if (isChat) "storepromax_chats" else "storepromax_orders"
         val channelName = if (isChat) "Tin nhắn" else "Thông báo Đơn hàng"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                channelId,
+                notifChannelId,
                 channelName,
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
@@ -79,14 +93,15 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             data.forEach { (key, value) -> putExtra(key, value) }
         }
 
+        val requestCode = Random.nextInt()
         val pendingIntent = PendingIntent.getActivity(
-            this, Random.nextInt(), intent,
+            this, requestCode, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
+        val notificationBuilder = NotificationCompat.Builder(this, notifChannelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)
@@ -96,6 +111,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+
         try {
             val bitmap = BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
             if (bitmap != null) {
@@ -105,6 +121,6 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             Log.e("FCM_TEST", "Không load được LargeIcon: ${e.message}")
         }
 
-        notificationManager.notify(Random.nextInt(), notificationBuilder.build())
+        notificationManager.notify(requestCode, notificationBuilder.build())
     }
 }

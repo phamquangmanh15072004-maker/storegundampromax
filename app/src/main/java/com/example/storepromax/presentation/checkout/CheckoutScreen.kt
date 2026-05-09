@@ -327,17 +327,17 @@ fun HybridQRPaymentDialog(
     onOpenWeb: (String) -> Unit
 ) {
     val context = LocalContext.current
-
-    var timeLeft by remember { mutableIntStateOf(5 * 60) }
+    var timeLeft by remember { mutableIntStateOf(15 * 60) }
 
     LaunchedEffect(Unit) {
         while (timeLeft > 0) {
             delay(1000L)
             timeLeft--
         }
-        Toast.makeText(context, "Đã hết thời gian thanh toán!", Toast.LENGTH_SHORT).show()
-        onCancelOrder()
+        Toast.makeText(context, "Mã QR có thể đã hết hạn. Vui lòng kiểm tra Lịch sử đơn hàng!", Toast.LENGTH_LONG).show()
+        onDismiss()
     }
+
     val minutes = timeLeft / 60
     val seconds = timeLeft % 60
     val timeString = String.format("%02d:%02d", minutes, seconds)
@@ -357,8 +357,12 @@ fun HybridQRPaymentDialog(
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Mã QR sẽ hết hạn sau:", fontSize = 14.sp, color = Color.Gray)
-                Text(timeString, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AlertRed)
+                Surface(color = Color(0xFFFFF0F0), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                    Text("Bạn có thể tắt App để mở ứng dụng ngân hàng. Đơn hàng đã được lưu an toàn!", color = Color(0xFFD32F2F), fontSize = 12.sp, modifier = Modifier.padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                }
+
+                Text("Thời gian giữ mã QR:", fontSize = 14.sp, color = Color.Gray)
+                Text(timeString, fontSize = 28.sp, fontWeight = FontWeight.Black, color = AlertRed)
 
                 Spacer(Modifier.height(8.dp))
 
@@ -366,14 +370,13 @@ fun HybridQRPaymentDialog(
                 Card(shape = RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.padding(vertical = 12.dp)) {
                     AsyncImage(model = qrUrl, contentDescription = "QR Code", modifier = Modifier.size(200.dp).padding(8.dp))
                 }
-                Text("Số tiền: ₫${DecimalFormat("#,###").format(data.amount)}", color = AlertRed, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("Số tiền: ₫${DecimalFormat("#,###").format(data.amount)}", color = AlertRed, fontWeight = FontWeight.Black, fontSize = 22.sp)
 
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider(color = Color(0xFFEEEEEE))
                 Spacer(Modifier.height(16.dp))
 
                 Text("Cách 2: Thanh toán trên máy này", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GunplaBlue)
-                Text("(Tự động mở App ngân hàng của bạn)", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 4.dp))
 
                 Spacer(Modifier.height(12.dp))
                 Button(
@@ -383,14 +386,14 @@ fun HybridQRPaymentDialog(
                 ) {
                     Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Mở App Ngân Hàng", fontWeight = FontWeight.Bold)
+                    Text("Mở App Ngân Hàng Trên Máy", fontWeight = FontWeight.Bold)
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    Toast.makeText(context, "Đã ghi nhận. Đơn hàng sẽ cập nhật khi tiền vào tài khoản!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Đã ghi nhận! Đơn hàng sẽ được duyệt khi tiền vào tài khoản.", Toast.LENGTH_LONG).show()
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(SuccessGreen),
@@ -403,7 +406,7 @@ fun HybridQRPaymentDialog(
         },
         dismissButton = {
             TextButton(
-                onClick = { onCancelOrder() },
+                onClick = { onCancelOrder() }, // Khi khách CỐ TÌNH bấm nút này thì mới gọi hàm Hủy
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Đổi ý / Hủy đơn hàng này", color = AlertRed, fontWeight = FontWeight.Bold)

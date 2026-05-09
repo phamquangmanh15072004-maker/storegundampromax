@@ -118,7 +118,7 @@ class MainActivity : ComponentActivity() {
                                             navController.navigate("admin_order_detail/${data.orderId}") { launchSingleTop = true }
                                         }
                                     }
-                                    "CHAT" -> {
+                                    "CHAT_MESSAGE" -> {
                                         if (!data.channelId.isNullOrEmpty()) {
                                             navController.navigate("chat_detail/${data.channelId}")
                                         }

@@ -71,6 +71,12 @@ fun ChatDetailScreen(
     viewModel: ChatDetailViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    DisposableEffect(channelId) {
+        ChatStateManager.activeChannelId = channelId
+        onDispose {
+            ChatStateManager.activeChannelId = null
+        }
+    }
     LaunchedEffect(channelId) { viewModel.loadMessages(channelId) }
 
     val uploadingMedia by viewModel.uploadingMedia.collectAsState()
