@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -44,7 +45,6 @@ fun LoginScreen(
     val context = LocalContext.current
     var isPasswordVisible by remember { mutableStateOf(false) }
 
-    // 🌟 1. TẠO BIẾN CỜ ĐỂ KHÓA GIAO DIỆN
     val isLoading = loginState is LoginState.Loading
 
     LaunchedEffect(loginState) {
@@ -99,12 +99,14 @@ fun LoginScreen(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Đăng Nhập để trải nghiệm thế giới Mô Hình",
+                text = "Đăng Nhập để trải nghiệm\nthế giới Mô Hình",
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 16.sp,
-                modifier = Modifier.padding(top = 8.dp, bottom = 32.dp)
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 32.dp)
             )
-
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 shape = RoundedCornerShape(24.dp),
@@ -124,7 +126,7 @@ fun LoginScreen(
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        enabled = !isLoading // 🌟 KHÓA INPUT
+                        enabled = !isLoading
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -139,12 +141,12 @@ fun LoginScreen(
                         singleLine = true,
                         visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        enabled = !isLoading, // 🌟 KHÓA INPUT
+                        enabled = !isLoading,
                         trailingIcon = {
                             val image = if (isPasswordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
                             IconButton(
                                 onClick = { isPasswordVisible = !isPasswordVisible },
-                                enabled = !isLoading // 🌟 KHÓA LUÔN NÚT XEM MẬT KHẨU
+                                enabled = !isLoading
                             ) {
                                 Icon(imageVector = image, contentDescription = null)
                             }
@@ -160,14 +162,14 @@ fun LoginScreen(
                             Checkbox(
                                 checked = viewModel.isRemember.value,
                                 onCheckedChange = { viewModel.isRemember.value = it },
-                                enabled = !isLoading // 🌟 KHÓA CHECKBOX
+                                enabled = !isLoading
                             )
                             Text(text = "Ghi nhớ", fontSize = 14.sp)
                         }
 
                         TextButton(
-                            onClick = { /* Todo: Quên mật khẩu */ },
-                            enabled = !isLoading // 🌟 KHÓA NÚT QUÊN MẬT KHẨU
+                            onClick = { Toast.makeText(context, "Tính năng đang được phát triển!!", Toast.LENGTH_SHORT).show() },
+                            enabled = !isLoading
                         ) {
                             Text(text = "Quên mật khẩu?", color = if (isLoading) Color.LightGray else Color.Gray, fontSize = 12.sp)
                         }
@@ -184,7 +186,7 @@ fun LoginScreen(
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         ),
-                        enabled = !isLoading // 🌟 KHÓA NÚT ĐĂNG NHẬP
+                        enabled = !isLoading
                     ) {
                         if (isLoading) {
                             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
@@ -215,7 +217,6 @@ fun LoginScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             ) {
-                // 🌟 TRUYỀN BIẾN isLoading VÀO SocialButton
                 SocialButton(iconRes = R.drawable.ic_google, enabled = !isLoading)
                 SocialButton(iconRes = R.drawable.ic_facebook, enabled = !isLoading)
                 SocialButton(iconRes = R.drawable.ic_apple, enabled = !isLoading)
@@ -227,7 +228,7 @@ fun LoginScreen(
                     text = "Đăng ký ngay",
                     color = if (isLoading) Color.Gray else Color(0xFFFFC107),
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable(enabled = !isLoading) { // 🌟 KHÓA NÚT ĐĂNG KÝ
+                    modifier = Modifier.clickable(enabled = !isLoading) {
                         navController.navigate(Screen.Register.route)
                     }
                 )
@@ -237,7 +238,6 @@ fun LoginScreen(
     }
 }
 
-// 🌟 CẬP NHẬT COMPOSABLE SocialButton ĐỂ NHẬN BIẾN enabled
 @Composable
 fun SocialButton(iconRes: Int, enabled: Boolean = true, onClick: () -> Unit = {}) {
     Button(

@@ -18,13 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
@@ -36,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,11 +39,21 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Order
 import com.example.storepromax.domain.model.VietQRBank
+import com.example.storepromax.presentation.checkout.TransferSuccessDialog
 import kotlinx.coroutines.delay
 import java.net.URLEncoder
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.Locale
+
+data class PaymentPopupData(
+    val url: String,
+    val bin: String,
+    val accNo: String,
+    val amount: Long,
+    val description: String,
+    val orderId: String
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,13 +65,18 @@ fun OrderHistoryScreen(
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val allOrders by viewModel.orders.collectAsState()
-    var selectedTabIndex by remember { mutableIntStateOf(initialTabIndex) }
     val banks by viewModel.banks.collectAsState()
+    val processingOrderId by viewModel.processingOrderId.collectAsState()
+    val timeAllowedMillis = 5 * 60 * 1000L
+
+    var selectedTabIndex by remember { mutableIntStateOf(initialTabIndex) }
     var orderToCancel by remember { mutableStateOf<Order?>(null) }
     var orderToReturn by remember { mutableStateOf<Order?>(null) }
     var orderToInputTracking by remember { mutableStateOf<Order?>(null) }
     var orderToViewReceipt by remember { mutableStateOf<Order?>(null) }
-    var orderToPayAgain by remember { mutableStateOf<Order?>(null) }
+
+    var paymentPopupData by remember { mutableStateOf<PaymentPopupData?>(null) }
+    var showTransferSuccessDialog by remember { mutableStateOf(false) }
 
     val statusCodes = listOf("ALL", "AWAITING_PAYMENT", "PENDING", "CONFIRMED", "SHIPPING", "COMPLETED", "RETURN_PENDING", "RETURN_APPROVED", "RETURNING", "RETURN_REJECTED", "CANCELLED", "REFUNDING", "REFUNDED")
     val tabTitles = listOf("Tất cả", "Chờ thanh toán", "Chờ xác nhận", "Chờ lấy hàng", "Đang giao", "Hoàn thành", "Chờ xử lý Trả", "Chờ gửi hàng", "Đang hoàn hàng", "Từ chối Trả", "Đã hủy", "Chờ hoàn tiền", "Đã hoàn tiền")
@@ -75,7 +85,17 @@ fun OrderHistoryScreen(
         if (selectedTabIndex == 0) allOrders else allOrders.filter { it.status == statusCodes[selectedTabIndex] }
     }
 
-    val bgLight = Color(0xFFF2F4F7)
+    LaunchedEffect(Unit) {
+        viewModel.uiEvent.collect { message ->
+            if (message == "PAYMENT_SUCCESS") {
+                paymentPopupData = null
+                showTransferSuccessDialog = true
+            } else {
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     val primaryColor = Color(0xFF0D47A1)
 
     Scaffold(
@@ -86,7 +106,7 @@ fun OrderHistoryScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         },
-        containerColor = bgLight
+        containerColor = Color(0xFFF2F4F7)
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             ScrollableTabRow(
@@ -103,31 +123,16 @@ fun OrderHistoryScreen(
                 tabTitles.forEachIndexed { index, title ->
                     val count = if (index == 0) allOrders.size else allOrders.count { it.status == statusCodes[index] }
                     val isSelected = selectedTabIndex == index
-
                     Tab(
                         selected = isSelected,
                         onClick = { selectedTabIndex = index },
                         text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = title,
-                                    fontSize = 13.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) primaryColor else Color.Gray
-                                )
+                                Text(text = title, fontSize = 13.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, color = if (isSelected) primaryColor else Color.Gray)
                                 if (count > 0) {
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Surface(
-                                        color = if (isSelected) primaryColor.copy(alpha = 0.1f) else Color(0xFFEEEEEE),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Text(
-                                            text = count.toString(),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSelected) primaryColor else Color.Gray,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
+                                    Surface(color = if (isSelected) primaryColor.copy(alpha = 0.1f) else Color(0xFFEEEEEE), shape = RoundedCornerShape(12.dp)) {
+                                        Text(text = count.toString(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isSelected) primaryColor else Color.Gray, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                                     }
                                 }
                             }
@@ -139,109 +144,111 @@ fun OrderHistoryScreen(
             if (filteredOrders.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(64.dp))
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Chưa có đơn hàng nào", color = Color.Gray, fontWeight = FontWeight.Medium)
+                        Icon(Icons.Default.Info, null, tint = Color.LightGray, modifier = Modifier.size(64.dp))
+                        Text("Chưa có đơn hàng nào", color = Color.Gray)
                     }
                 }
             } else {
-                LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxSize()) {
-                    items(filteredOrders) { order ->
+                LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    items(filteredOrders, key = { it.id }) { order ->
+                        val isPaymentExpired = order.status == "AWAITING_PAYMENT" && (System.currentTimeMillis() - normalizeTimestampMillis(order.createdAt)) > timeAllowedMillis
                         OrderItem(
                             order = order,
+                            isThisOrderProcessing = processingOrderId == order.id,
+                            isAnyProcessing = processingOrderId != null,
+                            isPaymentExpired = isPaymentExpired,
                             onCancelClick = { orderToCancel = order },
                             onReturnClick = { orderToReturn = order },
                             onInputTrackingClick = { orderToInputTracking = order },
                             onViewReceiptClick = { orderToViewReceipt = it },
-                            onPayAgainClick = { orderToPayAgain = it }
+                            onPayAgainClick = { clickedOrder ->
+                                viewModel.getPaymentDetails(clickedOrder) { success, bin, accNo, url, desc ->
+                                    if (success) {
+                                        paymentPopupData = PaymentPopupData(
+                                            url = url,
+                                            bin = bin,
+                                            accNo = accNo,
+                                            amount = clickedOrder.totalPrice,
+                                            description = desc,
+                                            orderId = clickedOrder.id
+                                        )
+                                    } else {
+                                        Toast.makeText(context, "Lỗi kết nối thanh toán!", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
                         )
                     }
                 }
             }
         }
     }
-    if (orderToPayAgain != null) {
-        val order = orderToPayAgain!!
-        val timeAllowed = 15 * 60 * 1000L
-        val timeElapsed = System.currentTimeMillis() - order.createdAt
-        val timeLeftMillis = timeAllowed - timeElapsed
 
-        if (timeLeftMillis <= 0) {
-            LaunchedEffect(Unit) {
-                Toast.makeText(context, "Đơn hàng này đã hết hạn thanh toán và tự động bị hủy!", Toast.LENGTH_SHORT).show()
-                viewModel.cancelOrder(order.id, "Hết thời gian thanh toán", false, null, null, null, null)
-                orderToPayAgain = null
+    if (paymentPopupData != null) {
+        val data = paymentPopupData!!
+        val currentOrder = allOrders.find { it.id == data.orderId }
+        val createdAtMillis = currentOrder?.createdAt?.let { normalizeTimestampMillis(it) } ?: System.currentTimeMillis()
+        val timeElapsed = System.currentTimeMillis() - createdAtMillis
+        val timeLeft = (timeAllowedMillis - timeElapsed).coerceAtLeast(0L)
+
+        if (timeLeft <= 0) {
+            LaunchedEffect(data.orderId) {
+                Toast.makeText(context, "Đơn hàng đã quá hạn. Hệ thống đang tự động hủy!", Toast.LENGTH_LONG).show()
+                paymentPopupData = null
             }
         } else {
             RepayQRDialog(
-                order = order,
-                initialTimeLeftMillis = timeLeftMillis,
-                onDismiss = { orderToPayAgain = null },
+                data = data,
+                initialTimeLeftMillis = timeLeft,
+                onDismiss = { paymentPopupData = null },
                 onCancelOrder = {
-                    viewModel.cancelOrder(order.id, "Khách tự hủy do không muốn thanh toán nữa", false, null, null, null, null)
-                    orderToPayAgain = null
+                    viewModel.cancelOrder(data.orderId, "Khách đổi ý không muốn thanh toán", false)
+                    paymentPopupData = null
                 },
                 onOpenWeb = {
-                    try {
-                        uriHandler.openUri("https://pay.payos.vn/web/${order.id}") // Placeholder Deeplink
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Không thể mở ứng dụng", Toast.LENGTH_SHORT).show()
+                    if (data.url.isNotBlank() && data.url != "null") {
+                        try { uriHandler.openUri(data.url) } catch (e: Exception) { Toast.makeText(context, "Không thể mở ứng dụng", Toast.LENGTH_SHORT).show() }
+                    } else {
+                        Toast.makeText(context, "Không có link thanh toán Web!", Toast.LENGTH_SHORT).show()
                     }
                 },
                 onAutoCancelWhenTimeout = {
-                    viewModel.cancelOrder(order.id, "Hết thời gian thanh toán", false, null, null, null, null)
-                    orderToPayAgain = null
+                    Toast.makeText(context, "Mã QR đã hết hạn. Hệ thống đang tự động hủy!", Toast.LENGTH_LONG).show()
+                    paymentPopupData = null
                 }
             )
         }
     }
 
     if (orderToCancel != null) {
-        val isPaid = orderToCancel!!.paymentStatus == "PAID"
-        UserCancelOrderDialog(
-            isPaid = isPaid,
-            banks = banks,
-            onDismiss = { orderToCancel = null },
-            onConfirm = { reason, bin, shortName, accNum, accName ->
-                viewModel.cancelOrder(orderToCancel!!.id, reason, isPaid, bin, shortName, accNum, accName)
-                orderToCancel = null
-            }
-        )
+        UserCancelOrderDialog(isPaid = orderToCancel!!.paymentStatus == "PAID", banks = banks, onDismiss = { orderToCancel = null }, onConfirm = { r, b, s, num, n -> viewModel.cancelOrder(orderToCancel!!.id, r, orderToCancel!!.paymentStatus == "PAID", b, s, num, n); orderToCancel = null })
     }
-
     if (orderToReturn != null) {
-        UserReturnOrderDialog(
-            banks = banks,
-            onDismiss = { orderToReturn = null },
-            onConfirm = { reason, description, images, bankBin, bankShortName, accNum, accName ->
-                viewModel.requestReturnRefund(orderToReturn!!.id, reason, description, images, bankBin, bankShortName, accNum, accName) { success, msg ->
-                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                    if (success) orderToReturn = null
-                }
-            }
-        )
+        UserReturnOrderDialog(banks = banks, onDismiss = { orderToReturn = null }, onConfirm = { r, d, i, b, s, num, n -> viewModel.requestReturnRefund(orderToReturn!!.id, r, d, i, b, s, num, n) { success, msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show(); if (success) orderToReturn = null } })
     }
-
     if (orderToInputTracking != null) {
-        UserInputTrackingDialog(
-            onDismiss = { orderToInputTracking = null },
-            onConfirm = { trackingCode ->
-                viewModel.submitReturnTrackingCode(orderToInputTracking!!.id, trackingCode) { success, msg ->
-                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                    if (success) orderToInputTracking = null
-                }
-            }
-        )
+        UserInputTrackingDialog(onDismiss = { orderToInputTracking = null }, onConfirm = { viewModel.submitReturnTrackingCode(orderToInputTracking!!.id, it) { s, m -> Toast.makeText(context, m, Toast.LENGTH_SHORT).show(); if (s) orderToInputTracking = null } })
     }
-
     if (orderToViewReceipt != null) {
         ReceiptImageDialog(order = orderToViewReceipt!!, onDismiss = { orderToViewReceipt = null })
+    }
+
+    if (showTransferSuccessDialog) {
+        TransferSuccessDialog(
+            onGoHome = {
+                showTransferSuccessDialog = false
+                selectedTabIndex = 2
+            }
+        )
     }
 }
 
 @Composable
 fun OrderItem(
     order: Order,
+    isThisOrderProcessing: Boolean,
+    isAnyProcessing: Boolean,
+    isPaymentExpired: Boolean,
     onCancelClick: () -> Unit,
     onReturnClick: () -> Unit,
     onInputTrackingClick: () -> Unit,
@@ -338,7 +345,6 @@ fun OrderItem(
                     }
                 }
             }
-
             if (order.status == "REFUNDED" && !order.refundReceiptUrl.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Surface(color = Color(0xFFE8F5E9), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -355,7 +361,6 @@ fun OrderItem(
 
             HorizontalDivider(color = Color(0xFFF0F0F0), modifier = Modifier.padding(vertical = 12.dp))
 
-            // Footer: Tổng tiền & Nút Action
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -372,14 +377,27 @@ fun OrderItem(
                 // CÁC NÚT ACTION TƯƠNG ỨNG VỚI TRẠNG THÁI
                 if (order.status == "AWAITING_PAYMENT") {
                     Spacer(modifier = Modifier.height(16.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        Button(
-                            onClick = { onPayAgainClick(order) },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1)),
-                            modifier = Modifier.height(40.dp)
-                        ) {
-                            Text("Thanh toán ngay", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    if (isPaymentExpired) {
+                        Text(
+                            text = "Đã quá hạn thanh toán",
+                            color = Color(0xFFC62828),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.End
+                        )
+                    } else {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            Button(
+                                onClick = { onPayAgainClick(order) },
+                                enabled = !isAnyProcessing,
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1)),
+                                modifier = Modifier.height(40.dp)
+                            ) {
+                                if (isThisOrderProcessing) CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                                else Text("Thanh toán ngay", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -399,6 +417,7 @@ fun OrderItem(
                     }
                 }
 
+                // 🌟 ĐÃ KHÔI PHỤC NÚT ĐÁNH GIÁ/YÊU CẦU TRẢ HÀNG 3 NGÀY KHI ĐƠN COMPLETED
                 if (order.status == "COMPLETED") {
                     val threeDaysInMillis = 3L * 24 * 60 * 60 * 1000
                     val isWithinReturnPeriod = (System.currentTimeMillis() - order.updatedAt) <= threeDaysInMillis
@@ -437,7 +456,7 @@ fun OrderItem(
 
 @Composable
 fun RepayQRDialog(
-    order: Order,
+    data: PaymentPopupData,
     initialTimeLeftMillis: Long,
     onDismiss: () -> Unit,
     onCancelOrder: () -> Unit,
@@ -459,35 +478,48 @@ fun RepayQRDialog(
     val seconds = timeLeftSeconds % 60
     val timeString = String.format("%02d:%02d", minutes, seconds)
 
-    val description = URLEncoder.encode("Thanh toan don ${order.id}", "UTF-8")
-    val accountName = URLEncoder.encode("Gunpla Store", "UTF-8")
-    val qrUrl = "https://img.vietqr.io/image/970422-0123456789-compact2.png?amount=${order.totalPrice}&addInfo=$description&accountName=$accountName"
+    val isQRAvailable = data.bin.isNotBlank() && data.accNo.isNotBlank()
+    val qrUrl = if (isQRAvailable) {
+        val description = URLEncoder.encode(data.description, "UTF-8")
+        val accountName = URLEncoder.encode("Gunpla Store", "UTF-8")
+        "https://img.vietqr.io/image/${data.bin}-${data.accNo}-compact2.png?amount=${data.amount}&addInfo=$description&accountName=$accountName"
+    } else ""
 
     AlertDialog(
         onDismissRequest = {},
         containerColor = Color.White,
-        title = { Text("Mã thanh toán đơn hàng", fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth(), color = Color(0xFF0D47A1)) },
+        title = { Text("Thanh toán đơn hàng", fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), color = Color(0xFF0D47A1)) },
         text = {
             Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
                 Surface(color = Color(0xFFFFF0F0), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                    Text("Đơn hàng sẽ tự động hủy nếu không được thanh toán trong thời gian quy định.", color = Color(0xFFD32F2F), fontSize = 12.sp, modifier = Modifier.padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Text("Đơn hàng sẽ được lưu cho đến khi hết thời gian hiệu lực!!!", color = Color(0xFFD32F2F), fontSize = 12.sp, modifier = Modifier.padding(12.dp), textAlign = TextAlign.Center)
                 }
 
-                Text("Thời gian còn lại:", fontSize = 14.sp, color = Color.Gray)
+                Text("Thời gian tồn tại mã:", fontSize = 14.sp, color = Color.Gray)
                 Text(timeString, fontSize = 28.sp, fontWeight = FontWeight.Black, color = Color.Red)
 
                 Spacer(Modifier.height(12.dp))
 
-                Text("Quét mã qua App Ngân Hàng", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0D47A1))
-                Card(shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.padding(vertical = 12.dp)) {
-                    AsyncImage(model = qrUrl, contentDescription = "QR Code", modifier = Modifier.size(220.dp).padding(8.dp))
+                if (isQRAvailable) {
+                    Text("Phương thức 1: Quét mã QR để thanh toán:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0D47A1))
+                    Card(shape = RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.padding(vertical = 12.dp)) {
+                        AsyncImage(model = qrUrl, contentDescription = "QR Code", modifier = Modifier.size(200.dp).padding(8.dp))
+                    }
+                } else {
+                    Surface(color = Color(0xFFFFF0F0), shape = RoundedCornerShape(8.dp), modifier = Modifier.padding(vertical = 12.dp)) {
+                        Text("Mã QR tạm thời không khả dụng. Vui lòng bấm nút Mở App Ngân Hàng bên dưới!", color = Color.Red, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(12.dp))
+                    }
                 }
-                Text("Số tiền: ₫${DecimalFormat("#,###").format(order.totalPrice)}", color = Color.Red, fontWeight = FontWeight.Black, fontSize = 22.sp)
+
+                Text("Số tiền: ₫${DecimalFormat("#,###").format(data.amount)}", color = Color.Red, fontWeight = FontWeight.Black, fontSize = 22.sp)
 
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider(color = Color(0xFFEEEEEE))
                 Spacer(Modifier.height(16.dp))
 
+                Text("Phương thức 2: Chuyển đến Ngân Hàng:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0D47A1))
+
+                Spacer(Modifier.height(12.dp))
                 Button(onClick = onOpenWeb, colors = ButtonDefaults.buttonColors(Color(0xFF0D47A1)), modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(8.dp)) {
                     Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
@@ -496,24 +528,14 @@ fun RepayQRDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    Toast.makeText(context, "Đã ghi nhận, vui lòng chờ hệ thống tự động cập nhật trạng thái!", Toast.LENGTH_LONG).show()
-                    onDismiss()
-                },
-                colors = ButtonDefaults.buttonColors(Color(0xFF00C853)),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
-            ) {
+            Button(onClick = { Toast.makeText(context, "Đã ghi nhận! Đơn hàng sẽ được duyệt khi tiền vào tài khoản.", Toast.LENGTH_LONG).show(); onDismiss() }, colors = ButtonDefaults.buttonColors(Color(0xFF00C853)), modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Tôi đã chuyển tiền xong", fontWeight = FontWeight.Bold)
+                Text("Tôi đã chuyển khoản xong", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onCancelOrder, modifier = Modifier.fillMaxWidth()) {
-                Text("Không muốn mua nữa (Hủy đơn)", color = Color.Gray, fontWeight = FontWeight.Bold)
-            }
+            TextButton(onClick = onCancelOrder, modifier = Modifier.fillMaxWidth()) { Text("Đổi ý / Hủy đơn hàng này", color = Color.Red, fontWeight = FontWeight.Bold) }
         }
     )
 }
@@ -949,4 +971,8 @@ fun ReceiptImageDialog(
             }
         }
     )
+}
+
+private fun normalizeTimestampMillis(raw: Long): Long {
+    return if (raw in 1..9_999_999_999L) raw * 1000L else raw
 }

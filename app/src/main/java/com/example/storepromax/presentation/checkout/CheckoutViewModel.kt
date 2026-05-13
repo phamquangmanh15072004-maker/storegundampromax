@@ -150,12 +150,12 @@ class CheckoutViewModel @Inject constructor(
         } catch (e: Exception) { e.printStackTrace() }
     }
 
-    fun cancelOrderFromPopup(orderId: String) {
+    fun cancelOrderFromPopup(orderId: String, reason: String = "Khách hàng hủy từ màn hình thanh toán") {
         viewModelScope.launch {
             paymentListenerJob?.cancel()
             orderRepository.cancelOrder(
                 orderId = orderId,
-                reason = "Khách hàng hủy từ màn hình thanh toán",
+                reason = reason,
                 isPaid = false,
                 bankBin = null,
                 bankShortName = null,

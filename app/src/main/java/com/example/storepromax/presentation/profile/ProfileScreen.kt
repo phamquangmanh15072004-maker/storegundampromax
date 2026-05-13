@@ -226,10 +226,6 @@ fun ProfileScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column {
-                    ModernMenuItem(Icons.Default.Notifications, Color(0xFF8D6E63), "Thông báo") {
-                        Toast.makeText(context, "Tính năng đang được phát triển!!!", Toast.LENGTH_SHORT).show()
-                    }
-                    ModernDivider()
                     ModernMenuItem(Icons.Default.Security, Color(0xFF607D8B), "Chính sách & Bảo mật") {
                         navController.navigate("privacy_policy")
                     }

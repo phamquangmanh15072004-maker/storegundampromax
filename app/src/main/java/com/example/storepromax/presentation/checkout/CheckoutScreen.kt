@@ -302,6 +302,14 @@ fun CheckoutScreen(
                 paymentPopupData = null
                 navController.navigate("home_screen") { popUpTo("home_screen") { inclusive = true } }
             },
+            onTimeout = {
+                viewModel.cancelOrderFromPopup(
+                    paymentPopupData!!.orderId,
+                    "Hết thời gian thanh toán (5 phút)"
+                )
+                paymentPopupData = null
+                navController.navigate("home_screen") { popUpTo("home_screen") { inclusive = true } }
+            },
             onOpenWeb = { url ->
                 try {
                     uriHandler.openUri(url)
@@ -324,10 +332,11 @@ fun HybridQRPaymentDialog(
     data: PaymentPopupData,
     onDismiss: () -> Unit,
     onCancelOrder: () -> Unit,
+    onTimeout: () -> Unit,
     onOpenWeb: (String) -> Unit
 ) {
     val context = LocalContext.current
-    var timeLeft by remember { mutableIntStateOf(15 * 60) }
+    var timeLeft by remember { mutableIntStateOf(5 * 60) }
 
     LaunchedEffect(Unit) {
         while (timeLeft > 0) {
@@ -335,7 +344,7 @@ fun HybridQRPaymentDialog(
             timeLeft--
         }
         Toast.makeText(context, "Mã QR có thể đã hết hạn. Vui lòng kiểm tra Lịch sử đơn hàng!", Toast.LENGTH_LONG).show()
-        onDismiss()
+        onTimeout()
     }
 
     val minutes = timeLeft / 60
@@ -358,15 +367,15 @@ fun HybridQRPaymentDialog(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Surface(color = Color(0xFFFFF0F0), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                    Text("Bạn có thể tắt App để mở ứng dụng ngân hàng. Đơn hàng đã được lưu an toàn!", color = Color(0xFFD32F2F), fontSize = 12.sp, modifier = Modifier.padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Text("Đơn hàng sẽ được lưu cho đến khi hết thời gian hiệu lực!!!", color = Color(0xFFD32F2F), fontSize = 12.sp, modifier = Modifier.padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 }
 
-                Text("Thời gian giữ mã QR:", fontSize = 14.sp, color = Color.Gray)
+                Text("Thời gian tồn tại mã QR:", fontSize = 14.sp, color = Color.Gray)
                 Text(timeString, fontSize = 28.sp, fontWeight = FontWeight.Black, color = AlertRed)
 
                 Spacer(Modifier.height(8.dp))
 
-                Text("Cách 1: Quét mã bằng máy khác", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GunplaBlue)
+                Text("Phương thức 1: Quét mã QR để thanh toán:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GunplaBlue)
                 Card(shape = RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.padding(vertical = 12.dp)) {
                     AsyncImage(model = qrUrl, contentDescription = "QR Code", modifier = Modifier.size(200.dp).padding(8.dp))
                 }
@@ -376,7 +385,7 @@ fun HybridQRPaymentDialog(
                 HorizontalDivider(color = Color(0xFFEEEEEE))
                 Spacer(Modifier.height(16.dp))
 
-                Text("Cách 2: Thanh toán trên máy này", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GunplaBlue)
+                Text("Phương thức 2: Chuyển đển Ngân Hàng:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GunplaBlue)
 
                 Spacer(Modifier.height(12.dp))
                 Button(
@@ -406,7 +415,7 @@ fun HybridQRPaymentDialog(
         },
         dismissButton = {
             TextButton(
-                onClick = { onCancelOrder() }, // Khi khách CỐ TÌNH bấm nút này thì mới gọi hàm Hủy
+                onClick = { onCancelOrder() },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Đổi ý / Hủy đơn hàng này", color = AlertRed, fontWeight = FontWeight.Bold)
