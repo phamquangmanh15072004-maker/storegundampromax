@@ -257,7 +257,7 @@ fun PostDetailScreen(
                                     OutlinedButton(
                                         onClick = {
                                             viewModel.contactSeller(p) { channelId ->
-                                                navController.navigate("chat_screen/$channelId")
+                                                navController.navigate("chat_detail/$channelId")
                                             }
                                         },
                                         shape = RoundedCornerShape(20.dp),
