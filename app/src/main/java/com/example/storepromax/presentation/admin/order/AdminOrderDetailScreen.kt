@@ -35,7 +35,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Order
-import com.example.storepromax.feature.product_detail.components.SwipeToConfirmButton
+import com.example.storepromax.presentation.component.SwipeToConfirmButton
 import java.net.URLEncoder
 import java.text.DecimalFormat
 

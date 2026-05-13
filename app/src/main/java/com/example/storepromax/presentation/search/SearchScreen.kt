@@ -31,7 +31,7 @@ import com.example.storepromax.presentation.home.components.ProductItem
 import com.example.storepromax.presentation.navigation.Screen
 
 // Import Sheet và Model
-import com.example.storepromax.feature.product_detail.components.AddToCartSheet
+import com.example.storepromax.presentation.component.AddToCartSheet
 import com.example.storepromax.domain.model.Product
 
 val GunplaBlue = Color(0xFF0D47A1)

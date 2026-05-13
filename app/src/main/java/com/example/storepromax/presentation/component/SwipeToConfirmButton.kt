@@ -1,4 +1,4 @@
-package com.example.storepromax.feature.product_detail.components
+package com.example.storepromax.presentation.component
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween

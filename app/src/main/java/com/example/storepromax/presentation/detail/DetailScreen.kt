@@ -31,8 +31,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Product
-import com.example.storepromax.feature.product_detail.components.AddToCartSheet
-import com.example.storepromax.feature.product_detail.components.ReviewSection
+import com.example.storepromax.presentation.component.AddToCartSheet
+import com.example.storepromax.presentation.component.ReviewSection
 import com.example.storepromax.presentation.home.components.ProductItem
 import com.example.storepromax.presentation.navigation.Screen
 import com.example.storepromax.presentation.wishlist.WishlistViewModel

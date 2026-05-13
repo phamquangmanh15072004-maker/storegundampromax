@@ -1,4 +1,4 @@
-package com.example.storepromax.presentation.chat
+package com.example.storepromax.presentation.admin.chat
 
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
+import kotlin.collections.get
 
 data class UploadingMedia(val uri: Uri, val isVideo: Boolean)
 
@@ -45,24 +46,34 @@ class ChatDetailViewModel @Inject constructor(
     val currentUserId = auth.currentUser?.uid ?: ""
 
     fun loadMessages(channelId: String) {
+        // 1. Lắng nghe tin nhắn
         viewModelScope.launch {
             chatRepo.getMessages(channelId).collect { listMsg ->
                 _messages.value = listMsg.filter { !it.deletedBy.contains(currentUserId) }
             }
         }
 
+        // 2. Lắng nghe thông tin Channel & TỰ ĐỘNG DẬP THÔNG BÁO ĐỎ
         viewModelScope.launch {
             firestore.collection("channels").document(channelId)
                 .addSnapshotListener { snapshot, error ->
                     if (snapshot != null && snapshot.exists()) {
                         _currentChannel.value = snapshot.toObject(ChatChannel::class.java)
+
+                        // 🌟 BỘ DẬP LỬA NẰM Ở ĐÂY: Hễ thấy có tin chưa đọc là ép về 0 ngay lập tức!
+                        try {
+                            val unreadMap = snapshot.get("unreadCounts") as? Map<String, Number>
+                            val myUnread = unreadMap?.get(currentUserId)?.toLong() ?: 0L
+
+                            if (myUnread > 0L) {
+                                firestore.collection("channels").document(channelId)
+                                    .update("unreadCounts.$currentUserId", 0)
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                     }
                 }
-
-            try {
-                firestore.collection("channels").document(channelId)
-                    .update("unreadCounts.$currentUserId", 0)
-            } catch (e: Exception) { e.printStackTrace() }
         }
     }
 

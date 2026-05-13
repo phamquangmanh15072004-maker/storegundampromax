@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -54,11 +53,11 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.BannerModel
 import com.example.storepromax.domain.model.Product
-import com.example.storepromax.feature.product_detail.components.AddToCartSheet
+import com.example.storepromax.presentation.component.AddToCartSheet
 import com.example.storepromax.presentation.admin.notification.NotificationViewModel
 import com.example.storepromax.presentation.home.components.ProductItem
 import com.example.storepromax.presentation.navigation.Screen
-import com.example.storepromax.feature.product_detail.components.VoucherHomeSection
+import com.example.storepromax.presentation.component.VoucherHomeSection
 import com.example.storepromax.presentation.main.MainViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay

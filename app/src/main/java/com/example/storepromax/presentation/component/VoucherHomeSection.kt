@@ -1,8 +1,8 @@
-package com.example.storepromax.feature.product_detail.components
+package com.example.storepromax.presentation.component
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -18,7 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -142,12 +144,12 @@ fun VoucherTicketHome(
                     )
                 }
             }
-            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxHeight().width(1.dp)) {
+            Canvas(modifier = Modifier.fillMaxHeight().width(1.dp)) {
                 drawLine(
                     color = Color(0xFFE0E0E0),
-                    start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                    end = androidx.compose.ui.geometry.Offset(0f, size.height),
-                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                    start = Offset(0f, 0f),
+                    end = Offset(0f, size.height),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
                 )
             }
             Row(
@@ -178,7 +180,7 @@ fun VoucherTicketHome(
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Default.Schedule,
+                            imageVector = Icons.Default.Schedule,
                             contentDescription = null,
                             tint = if (isNotStarted) AlertRed else Color(0xFF9E9E9E),
                             modifier = Modifier.size(12.dp)
