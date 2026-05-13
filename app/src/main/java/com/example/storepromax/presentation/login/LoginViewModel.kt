@@ -1,5 +1,6 @@
 package com.example.storepromax.presentation.login
 
+import android.util.Log
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
@@ -89,6 +90,7 @@ class LoginViewModel @Inject constructor(
                             }
                         }.onFailure { e ->
                             _loginState.value = LoginState.Error("Không thể lấy thông tin người dùng: ${e.message}")
+                            Log.e("LoginViewModel", "Error getting user details", e)
                             authRepository.logout()
                         }
                     } else {

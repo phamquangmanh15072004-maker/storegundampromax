@@ -27,7 +27,7 @@ data class User(
     var isLocked: Boolean = false,
 
     val lockReason: String = "",
-    val lockedAt: String? = null,
+    val lockedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val fcmToken: String = "",
     val lastActive: Long = System.currentTimeMillis()

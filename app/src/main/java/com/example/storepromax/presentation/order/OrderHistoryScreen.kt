@@ -39,7 +39,8 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.Order
 import com.example.storepromax.domain.model.VietQRBank
-import com.example.storepromax.presentation.checkout.TransferSuccessDialog
+import com.example.storepromax.presentation.checkout.GunplaBlue
+import com.example.storepromax.presentation.checkout.SuccessGreen
 import kotlinx.coroutines.delay
 import java.net.URLEncoder
 import java.text.DecimalFormat
@@ -242,7 +243,16 @@ fun OrderHistoryScreen(
         )
     }
 }
-
+@Composable
+fun TransferSuccessDialog(onGoHome: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = {}, containerColor = Color.White,
+        icon = { Icon(Icons.Default.CheckCircle, null, tint = SuccessGreen, modifier = Modifier.size(56.dp)) },
+        title = { Text("Thanh toán thành công!", fontWeight = FontWeight.Bold, fontSize = 20.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+        text = { Text("Hệ thống đã nhận được tiền chuyển khoản. Đơn hàng của bạn đang được chuẩn bị và sẽ sớm được giao!", textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+        confirmButton = { Button(onClick = onGoHome, colors = ButtonDefaults.buttonColors(containerColor = GunplaBlue), modifier = Modifier.fillMaxWidth()) { Text("Tiếp tục", fontWeight = FontWeight.Bold) } }
+    )
+}
 @Composable
 fun OrderItem(
     order: Order,
@@ -501,7 +511,7 @@ fun RepayQRDialog(
                 Spacer(Modifier.height(12.dp))
 
                 if (isQRAvailable) {
-                    Text("Phương thức 1: Quét mã QR để thanh toán:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0D47A1))
+                    Text("Cách 1: Quét mã QR để thanh toán:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0D47A1))
                     Card(shape = RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.padding(vertical = 12.dp)) {
                         AsyncImage(model = qrUrl, contentDescription = "QR Code", modifier = Modifier.size(200.dp).padding(8.dp))
                     }
@@ -517,13 +527,13 @@ fun RepayQRDialog(
                 HorizontalDivider(color = Color(0xFFEEEEEE))
                 Spacer(Modifier.height(16.dp))
 
-                Text("Phương thức 2: Chuyển đến Ngân Hàng:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0D47A1))
+                Text("Cách 2: Chuyển đến Ngân Hàng:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0D47A1))
 
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = onOpenWeb, colors = ButtonDefaults.buttonColors(Color(0xFF0D47A1)), modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(8.dp)) {
                     Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Mở App Ngân Hàng Trên Máy", fontWeight = FontWeight.Bold)
+                    Text("Mở ứng dụng Ngân Hàng", fontWeight = FontWeight.Bold)
                 }
             }
         },
@@ -531,7 +541,7 @@ fun RepayQRDialog(
             Button(onClick = { Toast.makeText(context, "Đã ghi nhận! Đơn hàng sẽ được duyệt khi tiền vào tài khoản.", Toast.LENGTH_LONG).show(); onDismiss() }, colors = ButtonDefaults.buttonColors(Color(0xFF00C853)), modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Tôi đã chuyển khoản xong", fontWeight = FontWeight.Bold)
+                Text("Đã chuyển khoản", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
