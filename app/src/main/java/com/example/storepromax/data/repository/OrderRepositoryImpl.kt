@@ -5,6 +5,8 @@ import com.example.storepromax.domain.model.CartItem
 import com.example.storepromax.domain.model.Order
 import com.example.storepromax.domain.repository.OrderRepository
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentReference
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +34,8 @@ class OrderRepositoryImpl @Inject constructor(
             .whereEqualTo("userId", userId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error); return@addSnapshotListener
+                    close(error)
+                    return@addSnapshotListener
                 }
                 val orders = snapshot?.documents?.mapNotNull { doc ->
                     doc.toObject(Order::class.java)?.copy(id = doc.id)
@@ -48,28 +51,39 @@ class OrderRepositoryImpl @Inject constructor(
         freeshipCode: String?
     ): Result<String> {
         return try {
-            suspend fun getGlobalVoucherRef(code: String): com.google.firebase.firestore.DocumentReference? {
-                return firestore.collection("vouchers").whereEqualTo("code", code).get().await()
-                    .documents.firstOrNull()?.reference
+            val normalizedDiscountCode = discountCode?.takeIf { it.isNotBlank() }
+            val normalizedFreeshipCode = freeshipCode?.takeIf { it.isNotBlank() }
+
+            suspend fun getGlobalVoucherRef(code: String): DocumentReference? {
+                return firestore.collection("vouchers")
+                    .whereEqualTo("code", code)
+                    .get()
+                    .await()
+                    .documents
+                    .firstOrNull()
+                    ?.reference
             }
 
-            suspend fun getUserVoucherRef(
-                code: String,
-                userId: String
-            ): com.google.firebase.firestore.DocumentReference? {
+            suspend fun getUserVoucherRef(code: String, userId: String): DocumentReference? {
                 return firestore.collection("user_vouchers")
                     .whereEqualTo("userId", userId)
                     .whereEqualTo("voucher.code", code)
-                    .whereEqualTo("status", "AVAILABLE")
-                    .get().await()
-                    .documents.firstOrNull()?.reference
+                    .get()
+                    .await()
+                    .documents
+                    .firstOrNull()
+                    ?.reference
             }
 
-            val globalDiscountRef = if (!discountCode.isNullOrBlank()) getGlobalVoucherRef(discountCode) else null
-            val userDiscountRef = if (!discountCode.isNullOrBlank()) getUserVoucherRef(discountCode, order.userId) else null
-
-            val globalFreeshipRef = if (!freeshipCode.isNullOrBlank()) getGlobalVoucherRef(freeshipCode) else null
-            val userFreeshipRef = if (!freeshipCode.isNullOrBlank()) getUserVoucherRef(freeshipCode, order.userId) else null
+            val globalDiscountRef = normalizedDiscountCode?.let { getGlobalVoucherRef(it) }
+            val globalFreeshipRef = normalizedFreeshipCode?.let { getGlobalVoucherRef(it) }
+            val userDiscountRef = normalizedDiscountCode?.let { getUserVoucherRef(it, order.userId) }
+            val userFreeshipRef = normalizedFreeshipCode?.let { getUserVoucherRef(it, order.userId) }
+            val orderRef = if (order.id.isBlank()) {
+                firestore.collection("orders").document()
+            } else {
+                firestore.collection("orders").document(order.id)
+            }
 
             val savedOrderId = firestore.runTransaction { transaction ->
                 val productRefs = order.items.map { item ->
@@ -77,68 +91,85 @@ class OrderRepositoryImpl @Inject constructor(
                     val snapshot = transaction.get(docRef)
                     Triple(item, docRef, snapshot)
                 }
-
                 val globalDiscountSnap = globalDiscountRef?.let { transaction.get(it) }
                 val globalFreeshipSnap = globalFreeshipRef?.let { transaction.get(it) }
+                val userDiscountSnap = userDiscountRef?.let { transaction.get(it) }
+                val userFreeshipSnap = userFreeshipRef?.let { transaction.get(it) }
 
                 var calculatedTotalCost = 0L
+                var calculatedSubTotal = 0L
                 val finalItems = mutableListOf<CartItem>()
 
                 for ((item, _, snapshot) in productRefs) {
+                    if (!snapshot.exists()) throw Exception("San pham '${item.product.name}' khong ton tai!")
+
                     val realPrice = snapshot.getLong("price") ?: 0L
                     val realCostPrice = snapshot.getLong("costPrice") ?: 0L
                     val stock = snapshot.getLong("stock") ?: 0L
+                    val isActive = snapshot.getBoolean("isActive") ?: true
 
-                    if (realPrice != item.product.price) throw Exception("Giá sản phẩm '${item.product.name}' đã đổi, vui lòng load lại!")
-                    if (stock < item.quantity) throw Exception("Sản phẩm '${item.product.name}' đã hết hàng!")
+                    if (!isActive) throw Exception("San pham '${item.product.name}' da ngung ban!")
+                    if (realPrice != item.product.price) throw Exception("Gia san pham '${item.product.name}' da doi, vui long tai lai!")
+                    if (stock < item.quantity) throw Exception("San pham '${item.product.name}' khong du ton kho!")
 
-                    calculatedTotalCost += (realCostPrice * item.quantity)
-
-                    val frozenItem = item.copy(
-                        purchasedPrice = realPrice,
-                        costPriceAtPurchase = realCostPrice
+                    calculatedTotalCost += realCostPrice * item.quantity
+                    calculatedSubTotal += realPrice * item.quantity
+                    finalItems.add(
+                        item.copy(
+                            purchasedPrice = realPrice,
+                            costPriceAtPurchase = realCostPrice
+                        )
                     )
-                    finalItems.add(frozenItem)
                 }
 
-                globalDiscountSnap?.let { snap ->
-                    val limit = snap.getLong("usageLimit") ?: 0L
-                    val used = snap.getLong("usedCount") ?: 0L
-                    if (limit > 0 && used >= limit) throw Exception("Mã giảm giá đã hết lượt sử dụng!")
+                fun validateGlobalVoucher(code: String?, snap: DocumentSnapshot?, label: String) {
+                    if (code == null) return
+                    if (snap == null || !snap.exists()) throw Exception("$label khong ton tai hoac da bi xoa!")
+
+                    val now = System.currentTimeMillis()
+                    val isActive = snap.getBoolean("isActive") ?: true
+                    val startDate = snap.getLong("startDate") ?: 0L
+                    val expirationDate = snap.getLong("expirationDate") ?: 0L
+                    val minOrderValue = snap.getLong("minOrderValue") ?: 0L
+                    val usageLimit = snap.getLong("usageLimit") ?: 0L
+                    val usedCount = snap.getLong("usedCount") ?: 0L
+
+                    if (!isActive) throw Exception("$label da bi vo hieu hoa!")
+                    if (startDate > now) throw Exception("$label chua den gio su dung!")
+                    if (expirationDate > 0L && expirationDate < now) throw Exception("$label da het han!")
+                    if (calculatedSubTotal < minOrderValue) throw Exception("Don hang chua dat gia tri toi thieu de dung $label!")
+                    if (usageLimit > 0L && usedCount >= usageLimit) throw Exception("$label da het luot su dung!")
                 }
 
-                globalFreeshipSnap?.let { snap ->
-                    val limit = snap.getLong("usageLimit") ?: 0L
-                    val used = snap.getLong("usedCount") ?: 0L
-                    if (limit > 0 && used >= limit) throw Exception("Mã Freeship đã hết lượt sử dụng!")
+                fun validateUserVoucher(code: String?, snap: DocumentSnapshot?, label: String) {
+                    if (code == null) return
+                    if (snap == null || !snap.exists() || snap.getString("status") != "AVAILABLE") {
+                        throw Exception("Ban da su dung $label nay hoac ma khong con hieu luc!")
+                    }
                 }
 
-                if (discountCode != null && userDiscountRef == null) {
-                    throw Exception("Bạn đã sử dụng mã giảm giá này hoặc mã không còn hiệu lực!")
-                }
-                if (freeshipCode != null && userFreeshipRef == null) {
-                    throw Exception("Bạn đã sử dụng mã Freeship này hoặc mã không còn hiệu lực!")
-                }
+                validateGlobalVoucher(normalizedDiscountCode, globalDiscountSnap, "Ma giam gia")
+                validateGlobalVoucher(normalizedFreeshipCode, globalFreeshipSnap, "Ma freeship")
+                validateUserVoucher(normalizedDiscountCode, userDiscountSnap, "ma giam gia")
+                validateUserVoucher(normalizedFreeshipCode, userFreeshipSnap, "ma freeship")
+
                 for ((item, docRef, _) in productRefs) {
                     transaction.update(docRef, "stock", FieldValue.increment(-item.quantity.toLong()))
                     transaction.update(docRef, "sold", FieldValue.increment(item.quantity.toLong()))
                 }
-
                 globalDiscountRef?.let { transaction.update(it, "usedCount", FieldValue.increment(1)) }
                 globalFreeshipRef?.let { transaction.update(it, "usedCount", FieldValue.increment(1)) }
                 userDiscountRef?.let { transaction.update(it, "status", "USED") }
                 userFreeshipRef?.let { transaction.update(it, "status", "USED") }
 
                 val finalOrder = order.copy(
+                    id = orderRef.id,
                     items = finalItems,
                     totalCostPrice = calculatedTotalCost,
                     totalProfit = order.totalPrice - calculatedTotalCost
                 )
-
-                val orderRef = firestore.collection("orders").document(order.id)
                 transaction.set(orderRef, finalOrder)
-
-                return@runTransaction finalOrder.id
+                finalOrder.id
             }.await()
 
             Result.success(savedOrderId)
@@ -158,76 +189,119 @@ class OrderRepositoryImpl @Inject constructor(
     ) {
         withContext(Dispatchers.IO) {
             try {
-                val orderSnapshot = firestore.collection("orders").document(orderId).get().await()
+                val orderRef = firestore.collection("orders").document(orderId)
+                val orderSnapshot = orderRef.get().await()
                 if (!orderSnapshot.exists()) return@withContext
+
                 val userId = orderSnapshot.getString("userId")
                 val discountCode = orderSnapshot.getString("discountCode")
                 val freeshipCode = orderSnapshot.getString("freeshipCode")
-                val items = orderSnapshot.get("items") as? List<Map<String, Any>> ?: emptyList()
 
-                val batch = firestore.batch()
-                val orderRef = firestore.collection("orders").document(orderId)
-                val updates = mutableMapOf<String, Any>(
-                    "status" to if (isPaid) "REFUNDING" else "CANCELLED",
-                    "cancelReason" to reason,
-                    "cancelledBy" to "USER",
-                    "updatedAt" to System.currentTimeMillis()
-                )
-
-                if (isPaid) {
-                    bankBin?.let { updates["refundBankBin"] = it }
-                    bankShortName?.let { updates["refundBankShortName"] = it }
-                    accountNumber?.let { updates["refundAccountNumber"] = it }
-                    accountName?.let { updates["refundAccountName"] = it }
-                }
-                batch.update(orderRef, updates)
-                for (item in items) {
-                    val productMap = item["product"] as? Map<String, Any>
-                    val productId = productMap?.get("id") as? String
-                    val quantity = (item["quantity"] as? Number)?.toLong() ?: 1L
-
-                    if (productId != null) {
-                        val productRef = firestore.collection("products").document(productId)
-                        batch.update(productRef, "stock", FieldValue.increment(quantity))
-                        batch.update(productRef, "sold", FieldValue.increment(-quantity))
+                fun itemProductRefs(snapshot: DocumentSnapshot): List<Pair<DocumentReference, Long>> {
+                    val items = snapshot.get("items") as? List<Map<String, Any>> ?: emptyList()
+                    return items.mapNotNull { item ->
+                        val productMap = item["product"] as? Map<String, Any>
+                        val productId = productMap?.get("id") as? String
+                        val quantity = (item["quantity"] as? Number)?.toLong() ?: 1L
+                        productId?.let { firestore.collection("products").document(it) to quantity }
                     }
                 }
-                suspend fun restoreVoucher(code: String?) {
-                    if (code.isNullOrBlank() || userId.isNullOrBlank()) return
-                    val globalVoucherDocs = firestore.collection("vouchers")
-                        .whereEqualTo("code", code).get().await()
 
-                    globalVoucherDocs.documents.firstOrNull()?.reference?.let { ref ->
-                        batch.update(ref, "usedCount", FieldValue.increment(-1))
-                    }
-                    val userVoucherDocs = firestore.collection("user_vouchers")
+                suspend fun getVoucherRefs(code: String?): Pair<DocumentReference?, DocumentReference?> {
+                    if (code.isNullOrBlank() || userId.isNullOrBlank()) return null to null
+                    val globalRef = firestore.collection("vouchers")
+                        .whereEqualTo("code", code)
+                        .get()
+                        .await()
+                        .documents
+                        .firstOrNull()
+                        ?.reference
+                    val userRef = firestore.collection("user_vouchers")
                         .whereEqualTo("userId", userId)
                         .whereEqualTo("voucher.code", code)
-                        .whereEqualTo("status", "USED") // Chỉ hoàn những mã đang bị khóa bởi đơn này
-                        .get().await()
-
-                    userVoucherDocs.documents.firstOrNull()?.reference?.let { ref ->
-                        batch.update(ref, "status", "AVAILABLE")
-                    }
+                        .get()
+                        .await()
+                        .documents
+                        .firstOrNull()
+                        ?.reference
+                    return globalRef to userRef
                 }
-                restoreVoucher(discountCode)
-                restoreVoucher(freeshipCode)
-                val adminNotifRef = firestore.collection("notifications").document()
-                val adminNotifData = hashMapOf(
-                    "title" to "Khách hàng đã hủy đơn ❌",
-                    "message" to "Đơn hàng #${orderId.takeLast(6).uppercase()} vừa bị khách tự hủy. Lý do: $reason",
-                    "type" to "ORDER",
-                    "targetId" to orderId,
-                    "targetRoles" to listOf("ADMIN", "INVENTORY"),
-                    "readBy" to emptyList<String>(),
-                    "createdAt" to System.currentTimeMillis()
-                )
-                batch.set(adminNotifRef, adminNotifData)
-                batch.commit().await()
-                Log.d("OrderRepository", "Đã hủy đơn, hoàn kho, HOÀN VOUCHER và ghi chuông Admin thành công!")
 
+                val (globalDiscountRef, userDiscountRef) = getVoucherRefs(discountCode)
+                val (globalFreeshipRef, userFreeshipRef) = getVoucherRefs(freeshipCode)
+                val adminNotifRef = firestore.collection("notifications").document()
+
+                firestore.runTransaction { transaction ->
+                    val freshOrderSnapshot = transaction.get(orderRef)
+                    if (!freshOrderSnapshot.exists()) return@runTransaction
+
+                    val currentStatus = freshOrderSnapshot.getString("status") ?: ""
+                    if (currentStatus in listOf("CANCELLED", "REFUNDING", "REFUNDED")) {
+                        return@runTransaction
+                    }
+
+                    val productRefs = itemProductRefs(freshOrderSnapshot)
+                    val globalDiscountSnap = globalDiscountRef?.let { transaction.get(it) }
+                    val globalFreeshipSnap = globalFreeshipRef?.let { transaction.get(it) }
+                    val userDiscountSnap = userDiscountRef?.let { transaction.get(it) }
+                    val userFreeshipSnap = userFreeshipRef?.let { transaction.get(it) }
+
+                    val updates = mutableMapOf<String, Any>(
+                        "status" to if (isPaid) "REFUNDING" else "CANCELLED",
+                        "cancelReason" to reason,
+                        "cancelledBy" to "USER",
+                        "updatedAt" to System.currentTimeMillis()
+                    )
+                    if (isPaid) {
+                        bankBin?.let { updates["refundBankBin"] = it }
+                        bankShortName?.let { updates["refundBankShortName"] = it }
+                        accountNumber?.let { updates["refundAccountNumber"] = it }
+                        accountName?.let { updates["refundAccountName"] = it }
+                    }
+
+                    transaction.update(orderRef, updates)
+                    for ((productRef, quantity) in productRefs) {
+                        transaction.update(productRef, "stock", FieldValue.increment(quantity))
+                        transaction.update(productRef, "sold", FieldValue.increment(-quantity))
+                    }
+
+                    fun restoreGlobalVoucher(ref: DocumentReference?, snap: DocumentSnapshot?) {
+                        if (ref == null || snap == null || !snap.exists()) return
+                        val usedCount = snap.getLong("usedCount") ?: 0L
+                        if (usedCount > 0L) {
+                            transaction.update(ref, "usedCount", FieldValue.increment(-1))
+                        }
+                    }
+
+                    fun restoreUserVoucher(ref: DocumentReference?, snap: DocumentSnapshot?) {
+                        if (ref == null || snap == null || !snap.exists()) return
+                        if (snap.getString("status") == "USED") {
+                            transaction.update(ref, "status", "AVAILABLE")
+                        }
+                    }
+
+                    restoreGlobalVoucher(globalDiscountRef, globalDiscountSnap)
+                    restoreGlobalVoucher(globalFreeshipRef, globalFreeshipSnap)
+                    restoreUserVoucher(userDiscountRef, userDiscountSnap)
+                    restoreUserVoucher(userFreeshipRef, userFreeshipSnap)
+
+                    transaction.set(
+                        adminNotifRef,
+                        hashMapOf(
+                            "title" to "Khach hang da huy don",
+                            "message" to "Don hang #${orderId.takeLast(6).uppercase()} vua bi huy. Ly do: $reason",
+                            "type" to "ORDER",
+                            "targetId" to orderId,
+                            "targetRoles" to listOf("ADMIN", "INVENTORY"),
+                            "readBy" to emptyList<String>(),
+                            "createdAt" to System.currentTimeMillis()
+                        )
+                    )
+                }.await()
+
+                Log.d("OrderRepository", "Da huy don, hoan kho va hoan voucher thanh cong.")
             } catch (e: Exception) {
-                Log.e("OrderRepository", "Lỗi hủy đơn: ${e.message}")
+                Log.e("OrderRepository", "Loi huy don: ${e.message}")
                 throw e
             }
         }
@@ -238,7 +312,8 @@ class OrderRepositoryImpl @Inject constructor(
             .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error); return@addSnapshotListener
+                    close(error)
+                    return@addSnapshotListener
                 }
                 val orders = snapshot?.documents?.mapNotNull { doc ->
                     doc.toObject(Order::class.java)?.copy(id = doc.id)
@@ -261,7 +336,8 @@ class OrderRepositoryImpl @Inject constructor(
         val docRef = firestore.collection("orders").document(orderId)
         val subscription = docRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
-                close(error); return@addSnapshotListener
+                close(error)
+                return@addSnapshotListener
             }
             if (snapshot != null && snapshot.exists()) {
                 val order = snapshot.toObject(Order::class.java)?.copy(id = snapshot.id)
@@ -321,8 +397,8 @@ class OrderRepositoryImpl @Inject constructor(
 
             val notifRef = firestore.collection("notifications").document()
             val notifData = hashMapOf(
-                "title" to "Yêu cầu Trả hàng mới ⚠️",
-                "message" to "Đơn hàng #${orderId.takeLast(6).uppercase()} vừa có yêu cầu trả hàng. Lý do: $reason",
+                "title" to "Yeu cau tra hang moi",
+                "message" to "Don hang #${orderId.takeLast(6).uppercase()} vua co yeu cau tra hang. Ly do: $reason",
                 "type" to "RETURN_REQUEST",
                 "targetId" to orderId,
                 "targetRoles" to listOf("ADMIN"),
@@ -340,15 +416,18 @@ class OrderRepositoryImpl @Inject constructor(
             try {
                 val batch = firestore.batch()
                 val orderRef = firestore.collection("orders").document(orderId)
-                batch.update(orderRef, mapOf(
-                    "status" to "RETURNING",
-                    "returnTrackingCode" to trackingCode,
-                    "updatedAt" to System.currentTimeMillis()
-                ))
+                batch.update(
+                    orderRef,
+                    mapOf(
+                        "status" to "RETURNING",
+                        "returnTrackingCode" to trackingCode,
+                        "updatedAt" to System.currentTimeMillis()
+                    )
+                )
                 val notifRef = firestore.collection("notifications").document()
                 val notifData = hashMapOf(
-                    "title" to "Khách đã gửi hàng trả 📦",
-                    "message" to "Đơn hàng #${orderId.takeLast(6).uppercase()} đã được khách gửi bưu điện. Mã vận đơn: $trackingCode",
+                    "title" to "Khach da gui hang tra",
+                    "message" to "Don hang #${orderId.takeLast(6).uppercase()} da duoc khach gui buu dien. Ma van don: $trackingCode",
                     "type" to "RETURN_TRACKING",
                     "targetId" to orderId,
                     "targetRoles" to listOf("ADMIN"),

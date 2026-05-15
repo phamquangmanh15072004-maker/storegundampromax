@@ -1,5 +1,3 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -21,14 +19,6 @@ android {
         versionName = "1.0"
         multiDexEnabled = true
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        val keystoreFile = project.rootProject.file("local.properties")
-        val properties = Properties()
-        if (keystoreFile.exists()) {
-            properties.load(keystoreFile.inputStream())
-        }
-        val geminiApiKey = properties.getProperty("GEMINI_API_KEY") ?: ""
-
-        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
     }
 
     buildTypes {
@@ -122,7 +112,6 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.0.0")
     implementation("androidx.media3:media3-exoplayer:1.2.0")
     implementation("androidx.media3:media3-ui:1.2.0")
-    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
     implementation("com.github.jeziellago:compose-markdown:0.3.6")
 
     implementation("androidx.compose.material3:material3:1.2.1")

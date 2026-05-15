@@ -23,9 +23,12 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -298,7 +301,7 @@ class CheckoutViewModel @Inject constructor(
                 else if (totalPrice.value < voucher.minOrderValue) {
                     onResult(false, "Đơn hàng chưa đạt mức tối thiểu")
                 }
-                else if (voucher.usedCount >= voucher.usageLimit) {
+                else if (voucher.usageLimit > 0 && voucher.usedCount >= voucher.usageLimit) {
                     onResult(false, "Mã đã hết lượt")
                 }
                 else if (!voucher.isActive) {
@@ -313,16 +316,18 @@ class CheckoutViewModel @Inject constructor(
     }
 
     fun submitOrder(onSuccess: () -> Unit, onShowPaymentPopup: (String, String, String, String, String) -> Unit) {
+        if (_isProcessing.value) return
         val userId = auth.currentUser?.uid ?: ""
         val address = getFullAddress()
         if (name.value.isBlank() || phone.value.isBlank() || selectedProvince.value == null || selectedDistrict.value == null || selectedWard.value == null || specificAddress.value.isBlank()) {
             viewModelScope.launch { _uiEvent.send("Vui lòng chọn đầy đủ địa chỉ giao hàng!") }
             return
         }
+        _isProcessing.value = true
         viewModelScope.launch {
             _isProcessing.value = true
             val finalTotal = finalTotalPrice.value
-            val orderId = System.currentTimeMillis().toString().takeLast(9)
+            val orderId = UUID.randomUUID().toString()
             val dCode = _selectedDiscountVoucher.value?.code?.takeIf { it.isNotBlank() }
             val fCode = _selectedFreeshipVoucher.value?.code?.takeIf { it.isNotBlank() }
             val initialStatus = if (paymentMethod.value == "BANKING") "AWAITING_PAYMENT" else "PENDING"
@@ -343,7 +348,7 @@ class CheckoutViewModel @Inject constructor(
                 discountCode = dCode,
                 freeshipCode = fCode
             )
-            orderRepository.createOrder(newOrder, dCode, fCode).onSuccess {
+            orderRepository.createOrder(newOrder, dCode, fCode).onSuccess { savedOrderId ->
                 if (!isBuyNowMode) {
                     _displayItems.value.forEach { cartRepository.removeFromCart(it.product.id) }
                 }
@@ -351,25 +356,32 @@ class CheckoutViewModel @Inject constructor(
 
                 if (paymentMethod.value == "BANKING") {
                     try {
-                        val response = BackendRetrofit.api.createPaymentLink(
-                            PaymentRequest(orderId, finalTotal, "Thanh toan don $orderId")
-                        )
+                        val response = withTimeout(PAYMENT_LINK_TIMEOUT_MS) {
+                            BackendRetrofit.api.createPaymentLink(
+                                PaymentRequest(savedOrderId, finalTotal, "Thanh toan don $savedOrderId")
+                            )
+                        }
                         if (response.isSuccessful && response.body()?.success == true) {
                             val body = response.body()!!
                             onShowPaymentPopup(
                                 body.checkoutUrl ?: "", body.bin ?: "", body.accountNumber ?: "",
-                                body.description ?: "", orderId
+                                body.description ?: "", savedOrderId
                             )
-                            listenToOrderPaymentStatus(orderId, finalTotal.toDouble())
+                            listenToOrderPaymentStatus(savedOrderId, finalTotal.toDouble())
                         } else {
                             val errorMsg = response.errorBody()?.string() ?: response.message()
+                            runCatching { orderRepository.cancelOrder(savedOrderId, "Khong tao duoc link thanh toan: $errorMsg", false, null, null, null, null) }
                             _uiEvent.send("Server PayOS từ chối: $errorMsg")
                         }
+                    } catch (e: TimeoutCancellationException) {
+                        runCatching { orderRepository.cancelOrder(savedOrderId, "Timeout khi tao link thanh toan", false, null, null, null, null) }
+                        _uiEvent.send("Mạng đang chậm nên chưa tải được mã QR thanh toán. Đơn đã được hoàn lại, bạn thử đặt lại sau ít giây nhé.")
                     } catch (e: Exception){
+                        runCatching { orderRepository.cancelOrder(savedOrderId, "Loi ket noi server thanh toan: ${e.message}", false, null, null, null, null) }
                         _uiEvent.send("Lỗi kết nối Server thanh toán: ${e.message}")
                     }
                 } else {
-                    notificationRepository.sendOrderNotificationToAdmin(orderId, finalTotal.toDouble())
+                    notificationRepository.sendOrderNotificationToAdmin(savedOrderId, finalTotal.toDouble())
                     onSuccess()
                 }
             }.onFailure { error ->
@@ -416,6 +428,10 @@ class CheckoutViewModel @Inject constructor(
     fun onPhoneChange(v: String) { phone.value = v }
     fun onPaymentMethodChange(v: String) { paymentMethod.value = v }
     fun onSpecificAddressChange(v: String) { specificAddress.value = v }
+
+    companion object {
+        private const val PAYMENT_LINK_TIMEOUT_MS = 20_000L
+    }
 
     private suspend fun loadUserProfile() {
         auth.currentUser?.uid?.let { id ->

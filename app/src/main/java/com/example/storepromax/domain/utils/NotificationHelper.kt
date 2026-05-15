@@ -37,6 +37,8 @@ object NotificationHelper {
                         try {
                             val url = URL("https://gunpla-backend-ht5n.onrender.com/api/send-fcm")
                             val conn = url.openConnection() as HttpURLConnection
+                            conn.connectTimeout = 8_000
+                            conn.readTimeout = 10_000
                             conn.requestMethod = "POST"
                             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                             conn.setRequestProperty("Accept", "application/json")

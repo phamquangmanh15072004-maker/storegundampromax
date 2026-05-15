@@ -10,16 +10,14 @@ import androidx.lifecycle.viewModelScope
 import com.cloudinary.android.MediaManager
 import com.cloudinary.android.callback.ErrorInfo
 import com.cloudinary.android.callback.UploadCallback
-import com.example.storepromax.BuildConfig
+import com.example.storepromax.data.api.AiChatHistoryItem
+import com.example.storepromax.data.api.AiChatRequest
+import com.example.storepromax.data.api.GunplaBackendApi
 import com.example.storepromax.domain.model.ChatMessageAI
 import com.example.storepromax.domain.model.Post
 import com.example.storepromax.domain.model.Product
 import com.example.storepromax.domain.repository.CartRepository
-import com.example.storepromax.domain.repository.OrderRepository
 import com.example.storepromax.domain.repository.ProductRepository
-import com.google.ai.client.generativeai.Chat
-import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.content
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,7 +25,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
@@ -38,61 +35,77 @@ import kotlin.coroutines.resume
 class AIChatViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val cartRepository: CartRepository,
-    private val orderRepository: OrderRepository,
     private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val backendApi: GunplaBackendApi
 ) : ViewModel() {
-    private var chatSession: Chat? = null
     private val _messages = MutableStateFlow<List<ChatMessageAI>>(emptyList())
     val messages = _messages.asStateFlow()
-    private var cachedPostsInMarket: List<Post> = emptyList()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
+
     private var cachedProductsInKho: List<Product> = emptyList()
-    private val currentUserId = auth.currentUser?.uid ?: "UNKNOWN_USER"
+    private var cachedPostsInMarket: List<Post> = emptyList()
+    private val currentUserId: String? = auth.currentUser?.uid
+    private var isAiReady = false
     private var aiJob: Job? = null
+
+    init {
+        loadChatHistoryAndInitAI()
+    }
 
     fun stopGenerating() {
         aiJob?.cancel()
         _isLoading.value = false
     }
 
-    init {
-        loadChatHistoryAndInitAI()
-    }
-
     suspend fun uploadImageToCloudinary(uri: Uri): String? =
         suspendCancellableCoroutine { continuation ->
             MediaManager.get().upload(uri)
+                .unsigned(CLOUDINARY_UNSIGNED_PRESET)
                 .callback(object : UploadCallback {
-                    override fun onStart(requestId: String) {}
-                    override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
+                    override fun onStart(requestId: String) = Unit
+                    override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) = Unit
                     override fun onSuccess(requestId: String, resultData: Map<*, *>) {
                         val url = resultData["secure_url"] as? String
                         if (continuation.isActive) continuation.resume(url)
                     }
+
                     override fun onError(requestId: String, error: ErrorInfo) {
+                        Log.e("AIChat", "Cloudinary upload failed: ${error.description}")
                         if (continuation.isActive) continuation.resume(null)
                     }
-                    override fun onReschedule(requestId: String, error: ErrorInfo) {}
+
+                    override fun onReschedule(requestId: String, error: ErrorInfo) = Unit
                 })
                 .dispatch()
         }
 
     private fun loadChatHistoryAndInitAI() {
-        if (currentUserId == "UNKNOWN") return
+        val userId = currentUserId ?: run {
+            _messages.value = listOf(
+                ChatMessageAI(
+                    content = "Bạn cần đăng nhập để GunplaAI lưu lịch sử chat và tư vấn theo đơn hàng của bạn.",
+                    isFromUser = false
+                )
+            )
+            isAiReady = false
+            return
+        }
 
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val (productsInfo, allProductsInKho) = fetchRelevantProductsData()
-                val (postsInfo, allPosts) = fetchMarketplacePostsData()
+                val (_, allProductsInKho) = fetchRelevantProductsData()
+                val (_, allPosts) = fetchMarketplacePostsData()
                 cachedProductsInKho = allProductsInKho
                 cachedPostsInMarket = allPosts
 
-                val snapshot = firestore.collection("users").document(currentUserId)
+                val snapshot = firestore.collection("users").document(userId)
                     .collection("ai_chats")
                     .orderBy("timestamp")
+                    .limitToLast(MAX_STORED_HISTORY)
                     .get()
                     .await()
 
@@ -102,9 +115,13 @@ class AIChatViewModel @Inject constructor(
                     val timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
                     val hasGoToCartButton = doc.getBoolean("hasGoToCartButton") ?: false
                     val userImageUrl = doc.getString("userImageUrl")
-                    val attachedProductIds = doc.get("attachedProductIds") as? List<String> ?: emptyList()
+                    val attachedProductIds = (doc.get("attachedProductIds") as? List<*>)
+                        ?.mapNotNull { it as? String }
+                        ?: emptyList()
+                    val attachedPostIds = (doc.get("attachedPostIds") as? List<*>)
+                        ?.mapNotNull { it as? String }
+                        ?: emptyList()
                     val attachedProducts = allProductsInKho.filter { it.id in attachedProductIds }
-                    val attachedPostIds = doc.get("attachedPostIds") as? List<String> ?: emptyList()
                     val attachedPosts = attachedPostIds.map { postId ->
                         allPosts.find { it.id == postId } ?: Post(
                             id = postId,
@@ -115,6 +132,7 @@ class AIChatViewModel @Inject constructor(
                             images = emptyList()
                         )
                     }
+
                     ChatMessageAI(
                         id = doc.id,
                         content = content,
@@ -129,7 +147,7 @@ class AIChatViewModel @Inject constructor(
 
                 if (loadedMessages.isEmpty()) {
                     val welcomeMsg = ChatMessageAI(
-                        content = "Chào bạn! Mình là GunplaAI, trợ lý ảo thông minh của cửa hàng Gunpla đây. Kho đang về rất nhiều mẫu Gundam cực cháy. Mình nắm rõ từng mẫu Gundam trong kho cũng như các dụng cụ lắp ráp. Bạn đang muốn tìm dòng HG, RG, MG hay cần tư vấn gì thì cứ nhắn mình nha! 🤖",
+                        content = "Chào bạn! Mình là GunplaAI, trợ lý tư vấn Gunpla của cửa hàng. Bạn muốn tìm kit theo grade, ngân sách, độ khó lắp hay cần kiểm tra đơn hàng thì nhắn mình nhé.",
                         isFromUser = false
                     )
                     _messages.value = listOf(welcomeMsg)
@@ -138,90 +156,16 @@ class AIChatViewModel @Inject constructor(
                     _messages.value = loadedMessages
                 }
 
-                val pastOrders = orderRepository.getOrders().first()
-                val purchasedItemsInfo = if (pastOrders.isNotEmpty()) {
-                    val activeOrders = pastOrders.filter {
-                        it.status != "DELIVERED" && it.status != "CANCELLED" && it.status != "COMPLETED"
-                    }
-
-                    if (activeOrders.isNotEmpty()) {
-                        val sb = StringBuilder("CÁC ĐƠN HÀNG ĐANG CHỜ GIAO CỦA KHÁCH:\n")
-                        activeOrders.forEach { order ->
-                            val statusText = when(order.status) {
-                                "PENDING" -> "Đang chờ xác nhận (Dự kiến 3-4 ngày nữa giao tới)"
-                                "PROCESSING" -> "Đang đóng gói chuẩn bị hàng (Dự kiến 2-3 ngày nữa giao tới)"
-                                "SHIPPED" -> "Đã giao cho đơn vị vận chuyển (Dự kiến trong hôm nay hoặc ngày mai sẽ tới)"
-                                else -> "Đang xử lý (Sắp giao)"
-                            }
-                            val items = order.items.joinToString(", ") { "${it.product.name} (Số lượng: ${it.quantity})" }
-                            sb.append("- Đơn #${order.id.takeLast(6)}: Gồm [$items] -> Tình trạng: $statusText\n")
-                        }
-                        sb.toString()
-                    } else {
-                        "Khách hiện không có đơn hàng nào đang giao."
-                    }
-                } else {
-                    "Khách chưa từng mua hoặc đặt sản phẩm nào."
-                }
-
-                val sysPrompt = """
-                    Bạn là GunplaAI, trợ lý ảo cực kỳ thông minh và tận tâm của cửa hàng Gunpla.
-                    
-                    📦 KHO HÀNG CỦA SHOP (ƯU TIÊN 1):
-                    $productsInfo
-                    
-                    ♻️ BÀI ĐĂNG TỪ CỘNG ĐỒNG / MARKETPLACE (ƯU TIÊN 2):
-                    $postsInfo
-                    
-                    🚚 THÔNG TIN ĐƠN HÀNG CỦA KHÁCH:
-                    $purchasedItemsInfo
-                    
-                    NHIỆM VỤ VÀ QUY TẮC TỐI THƯỢNG (VI PHẠM SẼ CRASH HỆ THỐNG):
-                    
-                    1. VÀO THẲNG VẤN ĐỀ: Không dài dòng chào hỏi nếu đang ở giữa cuộc trò chuyện. Xưng hô là "Gunpla" hoặc "Em", gọi khách là "Anh/Chị" hoặc "Bạn".
-                    
-                    2. KHI TƯ VẤN SẢN PHẨM & MARKETPLACE:
-                       - ƯU TIÊN 1 (Hàng của Shop): Khi gợi ý sản phẩm của shop, BẮT BUỘC chèn mã [ID: id_san_pham] vào cuối câu. Có thể gộp ID: [ID: id1, id2].
-                       - ƯU TIÊN 2 (Hàng Pass/Cũ): CHỈ gợi ý bài đăng từ cộng đồng khi: Khách chê giá đắt, khách chủ động hỏi mua hàng cũ/pass, hoặc kho shop đã hết hàng. 
-                       - KHI GỢI Ý BÀI ĐĂNG, BẮT BUỘC chèn mã [POST_ID: id_bai_viet] vào cuối câu.
-                       - TUYỆT ĐỐI KHÔNG nhầm lẫn việc dùng [ID] và [POST_ID].
-                    
-                    3. KHI CHỐT ĐƠN HÀNG SHOP:
-                       - Nếu khách đồng ý mua nhưng chưa rõ số lượng: Phải hỏi lại số lượng.
-                       - Nếu đã rõ số lượng: Xác nhận với khách, SAU ĐÓ BẮT BUỘC chèn mã [AUTO_CART: id_san_pham, so_luong] vào cuối câu.
-                       
-                    4. KHI KHÁCH GỬI HÌNH ẢNH:
-                       - Hãy quan sát kỹ hình ảnh. Tìm sản phẩm giống hoặc tương tự nhất trong kho hàng để tư vấn. Nếu shop không có, hãy thử tìm trong kho Bài đăng cộng đồng.
-                       
-                    5. KHI KHÁCH HỎI VỀ ĐƠN HÀNG (VD: "Hàng của tôi đâu", "Bao giờ giao"):
-                       - Dựa vào "THÔNG TIN ĐƠN HÀNG CỦA KHÁCH" bên trên. Trả lời mã đơn hàng (đọc 6 số cuối), tình trạng hiện tại và thời gian dự kiến nhận hàng một cách tự nhiên, xoa dịu nếu khách giục.
-                    
-                    VÍ DỤ CÁCH BẠN PHẢI TRẢ LỜI:
-                    Khách: Tư vấn cho mình mẫu MG.
-                    Bạn: Dạ cửa hàng đang có sẵn mẫu MG Zeta Ver Ka và MG Barbatos cực kỳ xịn xò ạ! [ID: p4RrEFESLqJq3nUkqsLs, Y8w02J6P3bIgCwnIaAYd]
-                    
-                    Khách: Con Zeta đắt quá, Bạn xem có ai pass lại không?
-                    Bạn: Dạ Trợ Lý vừa kiểm tra thấy trong hội có bạn GundamMaster đang pass lại một con MG Zeta Ver Ka ráp rồi, giá rẻ hơn hẳn đó ạ. Anh xem thử bài này nhé! [POST_ID: post_123456]
-                    
-                    Khách: Ok chốt lấy anh con Barbatos của shop nha, 1 con thôi.
-                    Bạn: Dạ Trợ Lý đã tự động bỏ 1 hộp MG Barbatos vào giỏ hàng cho anh rồi nhé. Anh ghé giỏ hàng để chốt đơn nha! [AUTO_CART: Y8w02J6P3bIgCwnIaAYd, 1]
-                """.trimIndent()
-                val generativeModel = GenerativeModel(
-                    modelName = "gemini-2.5-flash",
-                    systemInstruction = content { text(sysPrompt) },
-                    apiKey = BuildConfig.GEMINI_API_KEY
-                )
-
-                val historyForGemini = _messages.value.map { msg ->
-                    content(role = if (msg.isFromUser) "user" else "model") {
-                        text(msg.content)
-                    }
-                }
-
-                chatSession = generativeModel.startChat(historyForGemini)
-
+                isAiReady = true
             } catch (e: Exception) {
-                Log.e("AIChat", "Lỗi khởi tạo AI: ${e.message}")
+                Log.e("AIChat", "Không thể khởi tạo AI: ${e.message}", e)
+                isAiReady = false
+                _messages.value = listOf(
+                    ChatMessageAI(
+                        content = "GunplaAI đang gặp lỗi kết nối dữ liệu. Bạn thử mở lại màn chat sau ít phút nhé.",
+                        isFromUser = false
+                    )
+                )
             } finally {
                 _isLoading.value = false
             }
@@ -229,39 +173,23 @@ class AIChatViewModel @Inject constructor(
     }
 
     private suspend fun fetchRelevantProductsData(): Pair<String, List<Product>> {
-        var productsDataString = "Hiện tại kho đang trống."
         var productList = emptyList<Product>()
 
         try {
-            val result = productRepository.getProductsPaginated(20, null, "All")
-
-            result.onSuccess { (list, _) ->
-                if (list.isNotEmpty()) {
-                    productList = list
-                    val productsInfoBuilder = StringBuilder()
-
-                    for (product in list) {
-                        productsInfoBuilder.append("- Tên: ${product.name} | Giá: ${product.price} | ID: ${product.id}\n")
-                        val reviewsResult = productRepository.getProductReviews(product.id)
-                        reviewsResult.onSuccess { reviews ->
-                            if (reviews.isNotEmpty()) {
-                                productsInfoBuilder.append("  * Đánh giá của người mua (3 đánh giá mới nhất):\n")
-                                reviews.take(3).forEach { review ->
-                                    productsInfoBuilder.append("    + ${review.rating} sao: \"${review.comment}\"\n")
-                                }
-                            } else {
-                                productsInfoBuilder.append("  * Đánh giá: Chưa có đánh giá nào.\n")
-                            }
-                        }
-                        productsInfoBuilder.append("\n")
-                    }
-                    productsDataString = productsInfoBuilder.toString()
-                }
+            productRepository.getProducts().onSuccess { list ->
+                productList = list
+                    .filter { it.isActive && it.stock > 0 }
+                    .sortedWith(
+                        compareByDescending<Product> { it.isFeatured }
+                            .thenByDescending { it.sold }
+                            .thenByDescending { it.rating }
+                            .thenByDescending { it.createdAt }
+                    )
             }
         } catch (e: Exception) {
-            Log.e("FirebaseError", "Lỗi: ${e.message}")
+            Log.e("AIChat", "Không thể đọc sản phẩm cho AI: ${e.message}", e)
         }
-        return Pair(productsDataString, productList)
+        return Pair("", productList)
     }
 
     fun sendMessage(
@@ -270,7 +198,12 @@ class AIChatViewModel @Inject constructor(
         imageUrl: String? = null,
         context: Context? = null
     ) {
-        if ((userContent.isBlank() && imageUri == null) || _isLoading.value || chatSession == null) return
+        if (userContent.isBlank() && imageUri == null) return
+        if (_isLoading.value) return
+        if (!isAiReady) {
+            appendAndSaveSystemMessage("GunplaAI chưa sẵn sàng. Bạn thử thoát màn chat rồi vào lại giúp mình nhé.")
+            return
+        }
 
         aiJob = viewModelScope.launch {
             _isLoading.value = true
@@ -285,7 +218,7 @@ class AIChatViewModel @Inject constructor(
                         MediaStore.Images.Media.getBitmap(context.contentResolver, imageUri)
                     }
                 } catch (e: Exception) {
-                    Log.e("AIChat", "Lỗi đọc ảnh: ${e.message}")
+                    Log.e("AIChat", "Không thể đọc ảnh người dùng gửi: ${e.message}", e)
                 }
             }
 
@@ -299,122 +232,21 @@ class AIChatViewModel @Inject constructor(
             saveMessageToFirebase(userMsg)
 
             try {
-                val inputContent = content("user") {
-                    if (bitmap != null) {
-                        image(bitmap)
-                    }
-                    if (userContent.isNotBlank()) {
-                        text(userContent)
-                    }
-                }
-
-                val response = chatSession?.sendMessage(inputContent)
-                val rawResponse = response?.text ?: "Lỗi phản hồi"
-                var showCartButton = false
-                var cleanAiMessage = rawResponse
-                val attachedProducts = mutableListOf<Product>()
-
-                val idRegex = "\\[ID:(.*?)\\]".toRegex()
-                val idMatches = idRegex.findAll(cleanAiMessage)
-                val extractedIds = mutableListOf<String>()
-
-                for (match in idMatches) {
-                    val ids = match.groupValues[1].split(",").map { it.trim() }
-                    extractedIds.addAll(ids)
-                }
-
-                cleanAiMessage = cleanAiMessage.replace(idRegex, "").trim()
-
-                if (extractedIds.isNotEmpty()) {
-                    attachedProducts.addAll(cachedProductsInKho.filter { product ->
-                        extractedIds.contains(product.id)
-                    })
-                }
-
-                val autoCartRegex = "\\[AUTO_CART:(.*?),\\s*(\\d+)\\]".toRegex()
-                val cartMatch = autoCartRegex.find(cleanAiMessage)
-
-                if (cartMatch != null) {
-                    showCartButton = true
-                    val productId = cartMatch.groupValues[1].trim()
-                    val quantity = cartMatch.groupValues[2].trim().toIntOrNull() ?: 1
-                    cleanAiMessage = cleanAiMessage.replace(autoCartRegex, "").trim()
-
-                    if (cleanAiMessage.isEmpty()) {
-                        cleanAiMessage =
-                            "Trợ Lý đã tự động thêm $quantity sản phẩm vào giỏ hàng cho bạn rồi nhé! Bạn kiểm tra giỏ hàng để tiến hành thanh toán nha."
-                    }
-
-                    val productToAdd = cachedProductsInKho.find { it.id == productId }
-                    if (productToAdd != null) {
-                        addToCartSilently(productToAdd, quantity)
-                    }
-                }
-
-                val postIdRegex = "\\[POST_ID:(.*?)\\]".toRegex()
-                val postIdMatches = postIdRegex.findAll(cleanAiMessage)
-                val extractedPostIds = mutableListOf<String>()
-
-                for (match in postIdMatches) {
-                    val ids = match.groupValues[1].split(",").map { it.trim() }
-                    extractedPostIds.addAll(ids)
-                }
-
-                cleanAiMessage = cleanAiMessage.replace(postIdRegex, "").trim()
-
-                val attachedPostsList = mutableListOf<Post>()
-                if (extractedPostIds.isNotEmpty()) {
-                    attachedPostsList.addAll(cachedPostsInMarket.filter { post ->
-                        extractedPostIds.contains(post.id)
-                    })
-                }
-
-                val aiMsg = ChatMessageAI(
-                    content = cleanAiMessage,
-                    isFromUser = false,
-                    attachedProducts = attachedProducts,
-                    attachedPosts = attachedPostsList,
-                    hasGoToCartButton = showCartButton
-                )
-                _messages.value = _messages.value + aiMsg
-                saveMessageToFirebase(aiMsg)
-
+                val rawResponse = requestAiResponseFromBackend(userContent, imageUrl)
+                val aiMessage = buildAiMessageFromRawResponse(rawResponse)
+                _messages.value = _messages.value + aiMessage
+                saveMessageToFirebase(aiMessage)
             } catch (e: Exception) {
                 if (e is CancellationException || aiJob?.isCancelled == true) {
-                    Log.d("AIChat_Debug", "AI generation cancelled by user.")
                     val stopMsg = ChatMessageAI(
                         content = "_[Đã dừng tạo câu trả lời]_",
                         isFromUser = false
                     )
                     _messages.value = _messages.value + stopMsg
                 } else {
-                    Log.e("AIChat_Error", "Lỗi AI: ${e.message}", e)
-
-                    val errorMessage = e.message ?: ""
-                    val friendlyContent = when {
-                        errorMessage.contains("high demand", ignoreCase = true) ||
-                                errorMessage.contains("503") ||
-                                errorMessage.contains("UNAVAILABLE") -> {
-                            "Xin lỗi bạn, hiện tại GunplaAI đang có quá nhiều người truy cập cùng lúc nên hơi quá tải. Bạn vui lòng thử lại sau vài phút nhé! 🤖"
-                        }
-                        errorMessage.contains("MissingFieldException") ||
-                                errorMessage.contains("serialization") -> {
-                            "GunplaAI đang gặp chút sự cố kết nối với máy chủ hệ thống. Bọn mình đang khắc phục, bạn thử lại câu hỏi nhé!"
-                        }
-                        e is java.net.UnknownHostException || e is java.net.SocketTimeoutException -> {
-                            "Mạng có vẻ yếu quá. Bạn kiểm tra lại kết nối Wi-Fi/4G rồi nhắn lại cho mình nha."
-                        }
-                        errorMessage.contains("blocked", ignoreCase = true) ||
-                                errorMessage.contains("safety", ignoreCase = true) -> {
-                            "Nội dung bạn hỏi có thể chứa từ khóa nhạy cảm hoặc vi phạm chính sách an toàn. Bạn thử đổi cách hỏi khác giúp mình nhé!"
-                        }
-                        else -> {
-                            "Hệ thống AI đang bảo trì một chút xíu. Bạn đợi một lát rồi quay lại trò chuyện cùng GunplaAI nha!"
-                        }
-                    }
-
+                    Log.e("AIChat_Error", "Lỗi AI backend: ${e.message}", e)
                     val errorMsg = ChatMessageAI(
-                        content = friendlyContent,
+                        content = friendlyAiError(e),
                         isFromUser = false
                     )
                     _messages.value = _messages.value + errorMsg
@@ -426,21 +258,132 @@ class AIChatViewModel @Inject constructor(
         }
     }
 
-    private fun addToCartSilently(product: Product, quantity: Int) {
-        viewModelScope.launch {
-            try {
-                cartRepository.addToCart(product, quantity)
-                Log.d("AIChat", "Đã tự động thêm ${product.name} vào giỏ hàng thành công!")
-            } catch (e: Exception) {
-                Log.e("AIChat", "Lỗi thêm giỏ hàng ngầm: ${e.message}")
+    private suspend fun requestAiResponseFromBackend(userContent: String, imageUrl: String?): String {
+        val firebaseUser = auth.currentUser ?: throw IllegalStateException("Bạn cần đăng nhập để dùng GunplaAI.")
+        val token = firebaseUser.getIdToken(false).await().token
+            ?: throw IllegalStateException("Không lấy được phiên đăng nhập Firebase.")
+
+        val history = _messages.value
+            .dropLast(1)
+            .takeLast(MAX_BACKEND_HISTORY)
+            .filter { it.content.isNotBlank() && it.content != "_[Đã dừng tạo câu trả lời]_" }
+            .map {
+                AiChatHistoryItem(
+                    role = if (it.isFromUser) "user" else "model",
+                    content = it.content
+                )
+            }
+
+        val response = backendApi.sendAiChatMessage(
+            authorization = "Bearer $token",
+            request = AiChatRequest(
+                message = userContent,
+                imageUrl = imageUrl,
+                history = history
+            )
+        )
+
+        if (!response.isSuccessful) {
+            val code = response.code()
+            val errorBody = response.errorBody()?.string().orEmpty()
+            throw IllegalStateException("AI backend error HTTP $code $errorBody")
+        }
+
+        val body = response.body()
+        if (body?.success != true || body.text.isNullOrBlank()) {
+            throw IllegalStateException(body?.message ?: "AI backend không trả về nội dung.")
+        }
+
+        return body.text
+    }
+
+    private suspend fun buildAiMessageFromRawResponse(rawResponse: String): ChatMessageAI {
+        var cleanAiMessage = rawResponse
+        var showCartButton = false
+        val attachedProducts = mutableListOf<Product>()
+        val attachedPostsList = mutableListOf<Post>()
+
+        val autoCartMatches = AUTO_CART_REGEX.findAll(cleanAiMessage).toList()
+        cleanAiMessage = cleanAiMessage.replace(AUTO_CART_REGEX, "").trim()
+        for (match in autoCartMatches) {
+            val productId = match.groupValues[1].trim()
+            val quantity = match.groupValues[2].toIntOrNull()?.coerceAtLeast(1) ?: 1
+            val addResult = addToCartIfAvailable(productId, quantity)
+            if (addResult != null) {
+                showCartButton = true
+                if (attachedProducts.none { it.id == addResult.id }) {
+                    attachedProducts.add(addResult)
+                }
+                if (cleanAiMessage.isBlank()) {
+                    cleanAiMessage = "Mình đã thêm $quantity sản phẩm ${addResult.name} vào giỏ hàng. Bạn kiểm tra giỏ hàng để chốt đơn nhé."
+                }
+            } else {
+                cleanAiMessage = appendAiNotice(
+                    cleanAiMessage,
+                    "Mẫu AI vừa chọn hiện không còn đủ tồn kho, nên mình chưa thêm vào giỏ hàng. Bạn có thể chọn mẫu khác trong các gợi ý bên dưới."
+                )
             }
         }
+
+        val extractedIds = ID_REGEX.findAll(cleanAiMessage)
+            .flatMap { it.groupValues[1].split(",") }
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+        cleanAiMessage = cleanAiMessage.replace(ID_REGEX, "").trim()
+        if (extractedIds.isNotEmpty()) {
+            attachedProducts.addAll(
+                cachedProductsInKho.filter { product ->
+                    product.id in extractedIds && attachedProducts.none { it.id == product.id }
+                }
+            )
+        }
+
+        val extractedPostIds = POST_ID_REGEX.findAll(cleanAiMessage)
+            .flatMap { it.groupValues[1].split(",") }
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+        cleanAiMessage = cleanAiMessage.replace(POST_ID_REGEX, "").trim()
+        if (extractedPostIds.isNotEmpty()) {
+            attachedPostsList.addAll(cachedPostsInMarket.filter { post -> post.id in extractedPostIds })
+        }
+
+        return ChatMessageAI(
+            content = cleanAiMessage.ifBlank { "Mình đã xử lý yêu cầu của bạn." },
+            isFromUser = false,
+            attachedProducts = attachedProducts,
+            attachedPosts = attachedPostsList,
+            hasGoToCartButton = showCartButton
+        )
+    }
+
+    private suspend fun addToCartIfAvailable(productId: String, quantity: Int): Product? {
+        val product = productRepository.getProductById(productId).getOrNull() ?: return null
+        if (!product.isActive || product.stock < quantity) return null
+
+        return cartRepository.addToCart(product, quantity).fold(
+            onSuccess = {
+                Log.d("AIChat", "Đã thêm ${product.name} vào giỏ hàng từ AI.")
+                product
+            },
+            onFailure = {
+                Log.e("AIChat", "Không thể thêm giỏ hàng từ AI: ${it.message}", it)
+                null
+            }
+        )
+    }
+
+    private fun appendAndSaveSystemMessage(content: String) {
+        val message = ChatMessageAI(content = content, isFromUser = false)
+        _messages.value = _messages.value + message
+        saveMessageToFirebase(message)
     }
 
     private fun saveMessageToFirebase(message: ChatMessageAI) {
-        if (currentUserId == "UNKNOWN") return
+        val userId = currentUserId ?: return
 
-        val chatRef = firestore.collection("users").document(currentUserId)
+        val chatRef = firestore.collection("users").document(userId)
             .collection("ai_chats").document(message.id)
         val attachedProductIds = message.attachedProducts.map { it.id }
         val attachedPostIds = message.attachedPosts.map { it.id }
@@ -457,28 +400,71 @@ class AIChatViewModel @Inject constructor(
     }
 
     private suspend fun fetchMarketplacePostsData(): Pair<String, List<Post>> {
-        var postsDataString = "Hiện tại chưa có bài đăng nào từ cộng đồng."
         var postList = emptyList<Post>()
 
         try {
             val snapshot = firestore.collection("posts")
                 .whereEqualTo("status", "APPROVED")
-                .limit(20)
+                .limit(MAX_POST_CONTEXT.toLong())
                 .get()
                 .await()
-            postList = snapshot.toObjects(Post::class.java)
-
-            if (postList.isNotEmpty()) {
-                val sb = StringBuilder()
-                for (post in postList) {
-                    val tinhTrang = if (post.condition == "USED") "Đã ráp (Cũ)" else "Chưa ráp (Mới)"
-                    sb.append("- Bài: ${post.title} | Giá pass: ${post.price}đ | Người bán: ${post.userName} | Tình trạng: $tinhTrang | POST_ID: ${post.id}\n")
-                }
-                postsDataString = sb.toString()
+            postList = snapshot.documents.mapNotNull { doc ->
+                doc.toObject(Post::class.java)?.copy(id = doc.id)
             }
         } catch (e: Exception) {
-            Log.e("AIChat", "Lỗi đọc Posts: ${e.message}")
+            Log.e("AIChat", "Không thể đọc bài marketplace cho AI: ${e.message}", e)
         }
-        return Pair(postsDataString, postList)
+        return Pair("", postList)
+    }
+
+    private fun friendlyAiError(e: Exception): String {
+        val errorMessage = e.message.orEmpty()
+        return when {
+            errorMessage.contains("401") || errorMessage.contains("đăng nhập", ignoreCase = true) -> {
+                "Phiên đăng nhập của bạn đã hết hạn. Bạn đăng nhập lại rồi dùng GunplaAI nhé."
+            }
+
+            errorMessage.contains("413") || errorMessage.contains("IMAGE_TOO_LARGE", ignoreCase = true) -> {
+                "Ảnh bạn gửi hơi lớn. Bạn chọn ảnh nhỏ hơn rồi thử lại nhé."
+            }
+
+            errorMessage.contains("504") || errorMessage.contains("timeout", ignoreCase = true) -> {
+                "GunplaAI phản hồi hơi lâu. Bạn thử gửi lại sau vài giây nhé."
+            }
+
+            errorMessage.contains("503") || errorMessage.contains("AI_UNAVAILABLE", ignoreCase = true) -> {
+                "Hiện tại GunplaAI đang quá tải hoặc cấu hình backend chưa sẵn sàng. Bạn thử lại sau ít phút nhé."
+            }
+
+            e is java.net.UnknownHostException || e is java.net.SocketTimeoutException -> {
+                "Kết nối mạng đang không ổn định. Bạn kiểm tra Wi-Fi/4G rồi nhắn lại nhé."
+            }
+
+            else -> "Hệ thống AI đang gặp sự cố tạm thời. Bạn thử lại sau ít phút nhé."
+        }
+    }
+
+    private fun appendAiNotice(message: String, notice: String): String {
+        return if (message.isBlank()) notice else "$message\n\n$notice"
+    }
+
+    companion object {
+        private const val CLOUDINARY_UNSIGNED_PRESET = "gundame-storepromax"
+        private const val MAX_STORED_HISTORY = 80L
+        private const val MAX_BACKEND_HISTORY = 30
+        private const val MAX_POST_CONTEXT = 20
+
+        private val AUTO_CART_REGEX = Regex(
+            "\\[\\s*AUTO_CART\\s*:\\s*([^,\\]]+)\\s*,\\s*(\\d+)\\s*]",
+            RegexOption.IGNORE_CASE
+        )
+        private val ID_REGEX = Regex(
+            "\\[\\s*ID\\s*:\\s*([^\\]]+)]",
+            RegexOption.IGNORE_CASE
+        )
+        private val POST_ID_REGEX = Regex(
+            "\\[\\s*POST_ID\\s*:\\s*([^\\]]+)]",
+            RegexOption.IGNORE_CASE
+        )
     }
 }

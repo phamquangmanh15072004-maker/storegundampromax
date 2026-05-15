@@ -17,8 +17,10 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
 @Module
@@ -74,8 +76,16 @@ object AppModule {
     @Provides
     @Singleton
     fun provideGunplaBackendApi(): GunplaBackendApi {
+        val client = OkHttpClient.Builder()
+            .connectTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(25, TimeUnit.SECONDS)
+            .build()
+
         return Retrofit.Builder()
             .baseUrl("https://gunpla-backend-ht5n.onrender.com/")
+            .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(GunplaBackendApi::class.java)

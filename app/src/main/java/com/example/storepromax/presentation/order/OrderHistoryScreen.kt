@@ -1,5 +1,6 @@
 package com.example.storepromax.presentation.order
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -215,6 +216,7 @@ fun OrderHistoryScreen(
                 },
                 onAutoCancelWhenTimeout = {
                     Toast.makeText(context, "Mã QR đã hết hạn. Hệ thống đang tự động hủy!", Toast.LENGTH_LONG).show()
+                    viewModel.cancelOrder(data.orderId, "Het thoi gian thanh toan", false)
                     paymentPopupData = null
                 }
             )
@@ -557,6 +559,7 @@ fun UserReturnOrderDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String, List<String>, String?, String?, String?, String?) -> Unit
 ) {
+    val context = LocalContext.current
     val reasons = listOf("Hàng bị lỗi/vỡ", "Giao sai sản phẩm", "Thiếu hàng", "Hàng giả/nhái", "Khác")
     var selectedReason by remember { mutableStateOf(reasons[0]) }
     var description by remember { mutableStateOf("") }
@@ -640,6 +643,7 @@ fun UserReturnOrderDialog(
                     }
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(selectedImages) { imageUrl ->
+                            val isVideo = context.contentResolver.getType(Uri.parse(imageUrl))?.startsWith("video/") == true
                             Box(modifier = Modifier.size(64.dp)) {
                                 AsyncImage(
                                     model = imageUrl,
@@ -647,6 +651,14 @@ fun UserReturnOrderDialog(
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(8.dp))
                                 )
+                                if (isVideo) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.45f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.PlayCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
+                                    }
+                                }
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)

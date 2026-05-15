@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.example.storepromax.domain.model.Voucher
 import com.example.storepromax.presentation.component.SearchableDropdown
 import kotlinx.coroutines.delay
@@ -337,6 +338,7 @@ fun HybridQRPaymentDialog(
 ) {
     val context = LocalContext.current
     var timeLeft by remember { mutableIntStateOf(5 * 60) }
+    var qrRetryKey by remember(data.orderId) { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         while (timeLeft > 0) {
@@ -377,7 +379,35 @@ fun HybridQRPaymentDialog(
 
                 Text("Phương thức 1: Quét mã QR để thanh toán:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GunplaBlue)
                 Card(shape = RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.padding(vertical = 12.dp)) {
-                    AsyncImage(model = qrUrl, contentDescription = "QR Code", modifier = Modifier.size(200.dp).padding(8.dp))
+                    SubcomposeAsyncImage(
+                        model = "$qrUrl&retry=$qrRetryKey",
+                        contentDescription = "QR Code",
+                        modifier = Modifier.size(216.dp).padding(8.dp),
+                        loading = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CircularProgressIndicator(color = GunplaBlue, modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+                                    Spacer(Modifier.height(10.dp))
+                                    Text("Đang tải mã QR...", fontSize = 12.sp, color = Color.Gray)
+                                }
+                            }
+                        },
+                        error = {
+                            Box(Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.WifiOff, contentDescription = null, tint = AlertRed, modifier = Modifier.size(36.dp))
+                                    Spacer(Modifier.height(8.dp))
+                                    Text("Mạng chậm nên chưa tải được mã QR.", fontSize = 12.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                    Spacer(Modifier.height(8.dp))
+                                    OutlinedButton(onClick = { qrRetryKey++ }) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Tải lại QR")
+                                    }
+                                }
+                            }
+                        }
+                    )
                 }
                 Text("Số tiền: ₫${DecimalFormat("#,###").format(data.amount)}", color = AlertRed, fontWeight = FontWeight.Black, fontSize = 22.sp)
 
@@ -561,7 +591,7 @@ fun VoucherTicket(
     val isNotStarted = voucher.startDate > currentTime
     val isDeactivated = !voucher.isActive
     val isExpired = voucher.expirationDate < currentTime && voucher.expirationDate > 0L
-    val isDepleted = voucher.usedCount >= voucher.usageLimit
+    val isDepleted = voucher.usageLimit > 0 && voucher.usedCount >= voucher.usageLimit
     val isNotEnoughValue = currentSubTotal > 0L && currentSubTotal < voucher.minOrderValue
     val canUse = !isDeactivated && !isNotStarted && !isExpired && !isDepleted && !isNotEnoughValue
     val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())

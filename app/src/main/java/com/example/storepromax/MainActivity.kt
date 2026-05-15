@@ -1,15 +1,20 @@
 package com.example.storepromax
 
 import AIChatScreen
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -78,6 +83,8 @@ data class DeepLinkData(
     val type: String?,
     val orderId: String? = null,
     val channelId: String? = null,
+    val postId: String? = null,
+    val targetId: String? = null,
     val action: String? = null
 )
 
@@ -87,10 +94,24 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var appLifecycleObserver: AppLifecycleObserver
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            Toast.makeText(
+                this,
+                "Bạn cần bật quyền thông báo để nhận cập nhật đơn hàng và tin nhắn.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     private var deepLinkData by mutableStateOf<DeepLinkData?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        NotificationChannels.create(this)
+        requestNotificationPermissionIfNeeded()
         ProcessLifecycleOwner.get().lifecycle.addObserver(appLifecycleObserver)
         setContent {
             StorePromaxTheme {
@@ -108,6 +129,20 @@ class MainActivity : ComponentActivity() {
                                 navController.navigate("write_review_screen/${data.orderId}")
                             } else {
                                 when (data.type) {
+                                    null, "" -> {
+                                        when {
+                                            !data.channelId.isNullOrEmpty() -> {
+                                                navController.navigate("chat_detail/${data.channelId}") { launchSingleTop = true }
+                                            }
+                                            !data.orderId.isNullOrEmpty() -> {
+                                                navController.navigate("order_history_screen/0") { launchSingleTop = true }
+                                            }
+                                            !data.postId.isNullOrEmpty() || !data.targetId.isNullOrEmpty() -> {
+                                                val postId = data.postId ?: data.targetId
+                                                navController.navigate("post_detail/$postId") { launchSingleTop = true }
+                                            }
+                                        }
+                                    }
                                     "ORDER_UPDATE" -> {
                                         if (!data.orderId.isNullOrEmpty()) {
                                             navController.navigate("order_history_screen/0") { launchSingleTop = true }
@@ -123,9 +158,20 @@ class MainActivity : ComponentActivity() {
                                             navController.navigate("chat_detail/${data.channelId}")
                                         }
                                     }
+                                    "CHAT" -> {
+                                        if (!data.channelId.isNullOrEmpty()) {
+                                            navController.navigate("chat_detail/${data.channelId}")
+                                        }
+                                    }
                                     "CHAT_ADMIN" -> {
                                         if (!data.channelId.isNullOrEmpty()) {
                                             navController.navigate("admin_chat_detail/${data.channelId}")
+                                        }
+                                    }
+                                    "COMMENT", "LIKE" -> {
+                                        val postId = data.postId ?: data.targetId
+                                        if (!postId.isNullOrEmpty()) {
+                                            navController.navigate("post_detail/$postId") { launchSingleTop = true }
                                         }
                                     }
                                 }
@@ -388,6 +434,15 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+
+        val permissionState = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+        if (permissionState == PackageManager.PERMISSION_GRANTED) return
+
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
     private fun initCloudinary() {
         try {
             val config = HashMap<String, String>()
@@ -418,9 +473,11 @@ class MainActivity : ComponentActivity() {
             val type = bundle.getString("type")
             val orderId = bundle.getString("orderId")
             val channelId = bundle.getString("channelId")
+            val postId = bundle.getString("postId")
+            val targetId = bundle.getString("targetId")
             val action = bundle.getString("action")
-            if (type != null || action != null) {
-                deepLinkData = DeepLinkData(type, orderId, channelId, action)
+            if (type != null || action != null || !orderId.isNullOrEmpty() || !channelId.isNullOrEmpty() || !postId.isNullOrEmpty() || !targetId.isNullOrEmpty()) {
+                deepLinkData = DeepLinkData(type, orderId, channelId, postId, targetId, action)
             }
         }
     }

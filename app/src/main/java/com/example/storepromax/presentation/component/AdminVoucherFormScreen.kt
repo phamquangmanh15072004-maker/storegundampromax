@@ -55,7 +55,7 @@ fun AdminVoucherFormScreen(
         if (voucherId != null) {
             viewModel.getVoucherById(voucherId) { voucher ->
                 if (voucher != null) {
-                    isDepleted = voucher.usedCount >= voucher.usageLimit || !voucher.isActive
+                    isDepleted = (voucher.usageLimit > 0 && voucher.usedCount >= voucher.usageLimit) || !voucher.isActive
                     code = voucher.code
                     title = voucher.title
                     discountValue = voucher.discountValue.toString()

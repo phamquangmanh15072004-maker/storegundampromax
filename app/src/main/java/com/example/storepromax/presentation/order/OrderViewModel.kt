@@ -1,5 +1,7 @@
 package com.example.storepromax.presentation.order
 
+import android.content.Context
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -13,6 +15,7 @@ import com.example.storepromax.domain.model.PaymentRequest
 import com.example.storepromax.domain.model.VietQRBank
 import com.example.storepromax.domain.repository.OrderRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -26,6 +29,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class OrderViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val orderRepository: OrderRepository
 ) : ViewModel() {
 
@@ -133,7 +137,12 @@ class OrderViewModel @Inject constructor(
 
     private suspend fun uploadOneMedia(uriString: String): String? {
         val uri = Uri.parse(uriString)
-        val resourceType = if (uriString.contains("video") || uriString.endsWith(".mp4")) "video" else "image"
+        val mimeType = appContext.contentResolver.getType(uri).orEmpty()
+        val isVideo = mimeType.startsWith("video/")
+        if (isVideo) {
+            validateReturnVideoDuration(uri)
+        }
+        val resourceType = if (isVideo) "video" else "image"
 
         return suspendCancellableCoroutine { continuation ->
             MediaManager.get().upload(uri)
@@ -154,6 +163,22 @@ class OrderViewModel @Inject constructor(
         }
     }
 
+    private fun validateReturnVideoDuration(uri: Uri) {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(appContext, uri)
+            val durationMs = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+                ?: 0L
+            if (durationMs > MAX_RETURN_VIDEO_DURATION_MS) {
+                throw IllegalArgumentException("Video bằng chứng chỉ được tối đa 10 giây.")
+            }
+        } finally {
+            retriever.release()
+        }
+    }
+
     fun submitReturnTrackingCode(orderId: String, trackingCode: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             val result = orderRepository.submitReturnTrackingCode(orderId, trackingCode)
@@ -162,3 +187,5 @@ class OrderViewModel @Inject constructor(
         }
     }
 }
+
+private const val MAX_RETURN_VIDEO_DURATION_MS = 10_000L

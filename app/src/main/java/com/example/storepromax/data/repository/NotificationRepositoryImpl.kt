@@ -209,7 +209,7 @@ class NotificationRepositoryImpl @Inject constructor(
                 targetToken = receiverToken,
                 title = "Tin nhắn từ $senderName",
                 body = messageContent,
-                type = "CHAT",
+                type = "CHAT_MESSAGE",
                 channelId = channelId
             )
             backendApi.sendFcmNotification(request)

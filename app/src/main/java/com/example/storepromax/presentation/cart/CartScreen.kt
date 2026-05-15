@@ -304,7 +304,7 @@ fun VoucherTicket(
     val isNotStarted = voucher.startDate > currentTime
     val isDeactivated = !voucher.isActive
     val isExpired = voucher.expirationDate < currentTime && voucher.expirationDate > 0L
-    val isDepleted = voucher.usedCount >= voucher.usageLimit
+    val isDepleted = voucher.usageLimit > 0 && voucher.usedCount >= voucher.usageLimit
     val isNotEnoughValue = currentSubTotal > 0L && currentSubTotal < voucher.minOrderValue
     val canUse = !isDeactivated && !isNotStarted && !isExpired && !isDepleted && !isNotEnoughValue
     val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())

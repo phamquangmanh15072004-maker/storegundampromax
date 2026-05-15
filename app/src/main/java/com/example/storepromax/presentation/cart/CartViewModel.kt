@@ -112,7 +112,7 @@ class CartViewModel @Inject constructor(
             onResult(false, "Cần mua thêm để đạt tối thiểu ₫${voucher.minOrderValue}")
             return
         }
-        if (voucher.usedCount >= voucher.usageLimit) {
+        if (voucher.usageLimit > 0 && voucher.usedCount >= voucher.usageLimit) {
             onResult(false, "Mã này đã hết lượt!")
             return
         }

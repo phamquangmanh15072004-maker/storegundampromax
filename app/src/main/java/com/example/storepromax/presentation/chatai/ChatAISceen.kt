@@ -1,10 +1,25 @@
+import android.content.Context
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -14,15 +29,34 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ShoppingCartCheckout
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,8 +64,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,6 +75,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.storepromax.domain.model.ChatMessageAI
+import com.example.storepromax.domain.model.Post
+import com.example.storepromax.domain.model.Product
 import com.example.storepromax.domain.utils.formatVietnameseCurrency
 import com.example.storepromax.presentation.chat_ai.AIChatViewModel
 import com.example.storepromax.presentation.navigation.Screen
@@ -48,7 +86,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-val GunplaBlue = Color(0xFF0D47A1)
+private val GunplaBlue = Color(0xFF0D47A1)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,7 +96,6 @@ fun AIChatScreen(
 ) {
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-
     val listState = rememberLazyListState()
     var textState by remember { mutableStateOf("") }
 
@@ -74,208 +111,25 @@ fun AIChatScreen(
 
     Scaffold(
         topBar = {
-            Surface(shadowElevation = 2.dp, color = Color.White) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp)
-                        .padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(
-                            Icons.Default.ArrowBack,
-                            contentDescription = "Back",
-                            tint = GunplaBlue
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFE3F2FD)), contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.SmartToy,
-                            contentDescription = "AI",
-                            tint = GunplaBlue,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Column {
-                        Text(
-                            text = "Trợ lý ảo Gunpla (AI)",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text("Luôn sẵn sàng hỗ trợ", fontSize = 12.sp, color = Color.Gray)
-                    }
-                }
-            }
+            AIChatTopBar(onBack = { navController.popBackStack() })
         },
         bottomBar = {
-            val context = LocalContext.current
-            val coroutineScope = rememberCoroutineScope()
-            var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-            var uploadedImageUrl by remember { mutableStateOf<String?>(null) }
-            var isUploadingImage by remember { mutableStateOf(false) }
-            val photoPickerLauncher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.PickVisualMedia(),
-                onResult = { uri ->
-                    if (uri != null) {
-                        selectedImageUri = uri
-                        isUploadingImage = true
-                        coroutineScope.launch {
-                            uploadedImageUrl = viewModel.uploadImageToCloudinary(uri)
-                            isUploadingImage = false
-                        }
-                    }
-                }
+            AIChatInputBar(
+                isLoading = isLoading,
+                textState = textState,
+                onTextChange = { textState = it },
+                onStop = viewModel::stopGenerating,
+                onSend = { content, imageUri, uploadedImageUrl, context ->
+                    viewModel.sendMessage(
+                        userContent = content,
+                        imageUri = imageUri,
+                        imageUrl = uploadedImageUrl,
+                        context = context
+                    )
+                    textState = ""
+                },
+                uploadImage = viewModel::uploadImageToCloudinary
             )
-
-            Surface(shadowElevation = 8.dp, color = Color.White) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                ) {
-                    if (selectedImageUri != null) {
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                                .size(80.dp)
-                        ) {
-                            AsyncImage(
-                                model = selectedImageUri,
-                                contentDescription = "Ảnh đính kèm",
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(12.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                            if (isUploadingImage) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.align(Alignment.Center),
-                                    color = GunplaBlue
-                                )
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .size(18.dp)
-                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                    .clickable {
-                                        selectedImageUri = null
-                                        uploadedImageUrl = null
-                                        isUploadingImage = false
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Xóa",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = {
-                            photoPickerLauncher.launch(
-                                androidx.activity.result.PickVisualMediaRequest(
-                                    ActivityResultContracts.PickVisualMedia.ImageOnly
-                                )
-                            )
-                        }) {
-                            Icon(Icons.Default.Image, contentDescription = "Ảnh", tint = GunplaBlue)
-                        }
-
-                        TextField(
-                            value = textState,
-                            onValueChange = { textState = it },
-                            placeholder = {
-                                Text(
-                                    "Hỏi AI về Gundam, công cụ...",
-                                    color = Color.Gray,
-                                    fontSize = 14.sp
-                                )
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 4.dp),
-                            shape = RoundedCornerShape(24.dp),
-                            colors = TextFieldDefaults.colors(
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                focusedContainerColor = Color(0xFFF0F2F5),
-                                unfocusedContainerColor = Color(0xFFF0F2F5),
-                                cursorColor = GunplaBlue
-                            ),
-                            maxLines = 4,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(onSend = {
-                                if ((textState.isNotBlank() || selectedImageUri != null) && !isLoading && !isUploadingImage) {
-                                    viewModel.sendMessage(
-                                        textState,
-                                        selectedImageUri,
-                                        uploadedImageUrl,
-                                        context
-                                    )
-                                    textState = ""
-                                    selectedImageUri = null
-                                    uploadedImageUrl = null
-                                }
-                            })
-                        )
-
-                        if (isLoading) {
-                            IconButton(onClick = { viewModel.stopGenerating() }) {
-                                Icon(
-                                    Icons.Default.Stop,
-                                    contentDescription = "Dừng",
-                                    tint = Color.Red
-                                )
-                            }
-                        } else {
-                            val canSend =
-                                (textState.isNotBlank() || selectedImageUri != null) && !isUploadingImage
-                            IconButton(
-                                onClick = {
-                                    if (canSend) {
-                                        viewModel.sendMessage(
-                                            textState,
-                                            selectedImageUri,
-                                            uploadedImageUrl,
-                                            context
-                                        )
-                                        textState = ""
-                                        selectedImageUri = null
-                                        uploadedImageUrl = null
-                                    }
-                                },
-                                enabled = canSend
-                            ) {
-                                Icon(
-                                    Icons.Default.Send,
-                                    "Gửi",
-                                    tint = if (canSend) GunplaBlue else Color.Gray
-                                )
-                            }
-                        }
-                    }
-                }
-            }
         },
         containerColor = Color.White
     ) { padding ->
@@ -287,33 +141,27 @@ fun AIChatScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            messages.forEachIndexed { index, msg ->
-                val shouldShowTime = if (index == 0) {
-                    true
-                } else {
-                    val prevMsg = messages[index - 1]
-                    msg.timestamp - prevMsg.timestamp > 10 * 60 * 1000L
-                }
+            messages.forEachIndexed { index, message ->
+                val shouldShowTime = index == 0 ||
+                    message.timestamp - messages[index - 1].timestamp > 10 * 60 * 1000L
 
                 if (shouldShowTime) {
-                    item {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = formatMessageTime(msg.timestamp),
-                                fontSize = 12.sp,
-                                color = Color.Gray,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-                        }
+                    item(key = "time-${message.id}") {
+                        Text(
+                            text = formatMessageTime(message.timestamp),
+                            fontSize = 12.sp,
+                            color = Color.Gray,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
 
-                item {
+                item(key = message.id) {
                     AIChatBubble(
-                        message = msg,
+                        message = message,
                         onProductClick = { productId ->
                             navController.navigate(Screen.Detail.createRoute(productId))
                         },
@@ -328,8 +176,222 @@ fun AIChatScreen(
             }
 
             if (isLoading) {
-                item { AILoadingBubble() }
+                item(key = "loading") { AILoadingBubble() }
             }
+        }
+    }
+}
+
+@Composable
+private fun AIChatTopBar(onBack: () -> Unit) {
+    Surface(shadowElevation = 2.dp, color = Color.White) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Quay lại",
+                    tint = GunplaBlue
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFE3F2FD)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.SmartToy,
+                    contentDescription = "GunplaAI",
+                    tint = GunplaBlue,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column {
+                Text(
+                    text = "Trợ lý GunplaAI",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text("Tư vấn sản phẩm, giỏ hàng và đơn hàng", fontSize = 12.sp, color = Color.Gray)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AIChatInputBar(
+    isLoading: Boolean,
+    textState: String,
+    onTextChange: (String) -> Unit,
+    onStop: () -> Unit,
+    onSend: (String, Uri?, String?, Context) -> Unit,
+    uploadImage: suspend (Uri) -> String?
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var uploadedImageUrl by remember { mutableStateOf<String?>(null) }
+    var isUploadingImage by remember { mutableStateOf(false) }
+
+    fun sendCurrentMessage() {
+        if (textState.isBlank() && selectedImageUri == null) return
+        if (isLoading || isUploadingImage) return
+
+        onSend(textState, selectedImageUri, uploadedImageUrl, context)
+        selectedImageUri = null
+        uploadedImageUrl = null
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri ->
+            if (uri != null) {
+                selectedImageUri = uri
+                uploadedImageUrl = null
+                isUploadingImage = true
+                coroutineScope.launch {
+                    uploadedImageUrl = uploadImage(uri)
+                    isUploadingImage = false
+                }
+            }
+        }
+    )
+
+    Surface(shadowElevation = 8.dp, color = Color.White) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+        ) {
+            if (selectedImageUri != null) {
+                SelectedImagePreview(
+                    imageUri = selectedImageUri,
+                    isUploading = isUploadingImage,
+                    onClear = {
+                        selectedImageUri = null
+                        uploadedImageUrl = null
+                        isUploadingImage = false
+                    }
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    enabled = !isLoading && !isUploadingImage
+                ) {
+                    Icon(Icons.Default.Image, contentDescription = "Chọn ảnh", tint = GunplaBlue)
+                }
+
+                TextField(
+                    value = textState,
+                    onValueChange = onTextChange,
+                    placeholder = {
+                        Text(
+                            "Hỏi về Gunpla, dụng cụ, giỏ hàng...",
+                            color = Color.Gray,
+                            fontSize = 14.sp
+                        )
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 4.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedContainerColor = Color(0xFFF0F2F5),
+                        unfocusedContainerColor = Color(0xFFF0F2F5),
+                        cursorColor = GunplaBlue
+                    ),
+                    maxLines = 4,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { sendCurrentMessage() })
+                )
+
+                if (isLoading) {
+                    IconButton(onClick = onStop) {
+                        Icon(
+                            Icons.Default.Stop,
+                            contentDescription = "Dừng",
+                            tint = Color.Red
+                        )
+                    }
+                } else {
+                    val canSend = (textState.isNotBlank() || selectedImageUri != null) && !isUploadingImage
+                    IconButton(onClick = { sendCurrentMessage() }, enabled = canSend) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Gửi",
+                            tint = if (canSend) GunplaBlue else Color.Gray
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectedImagePreview(
+    imageUri: Uri?,
+    isUploading: Boolean,
+    onClear: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .size(80.dp)
+    ) {
+        AsyncImage(
+            model = imageUri,
+            contentDescription = "Ảnh đính kèm",
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(12.dp)),
+            contentScale = ContentScale.Crop
+        )
+        if (isUploading) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = GunplaBlue
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(18.dp)
+                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                .clickable(onClick = onClear),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Xóa ảnh",
+                tint = Color.White,
+                modifier = Modifier.size(12.dp)
+            )
         }
     }
 }
@@ -342,21 +404,19 @@ fun AIChatBubble(
     onPostClick: (String) -> Unit = {}
 ) {
     if (message.content == "_[Đã dừng tạo câu trả lời]_") {
-        Box(
+        Text(
+            text = "Đã dừng tạo câu trả lời",
+            color = Color.Gray.copy(alpha = 0.7f),
+            fontSize = 12.sp,
+            fontStyle = FontStyle.Italic,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Đã dừng tạo câu trả lời",
-                color = Color.Gray.copy(alpha = 0.7f),
-                fontSize = 12.sp,
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-            )
-        }
+            textAlign = TextAlign.Center
+        )
         return
     }
+
     val isMe = message.isFromUser
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -372,113 +432,122 @@ fun AIChatBubble(
         val bubbleColor = if (isMe) GunplaBlue else Color(0xFFF0F2F5)
         val textColor = if (isMe) Color.White else Color.Black
 
-        Column(
-            horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
-        ) {
-            val imageModel = message.localBitmap ?: message.userImageUrl
-            if (imageModel != null) {
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = 280.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                ) {
-                    AsyncImage(
-                        model = imageModel,
-                        contentDescription = "User Image",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 220.dp),
-                        contentScale = ContentScale.Crop
-                    )
-                }
+        val imageModel = message.localBitmap ?: message.userImageUrl
+        if (imageModel != null) {
+            AsyncImage(
+                model = imageModel,
+                contentDescription = "Ảnh người dùng gửi",
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .heightIn(max = 220.dp)
+                    .clip(RoundedCornerShape(16.dp)),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
 
-                Spacer(modifier = Modifier.height(6.dp))
-            }
-            if (message.content.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = 280.dp)
-                        .clip(bubbleShape)
-                        .background(bubbleColor)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    MarkdownText(
-                        markdown = message.content,
-                        style = TextStyle(color = textColor, fontSize = 15.sp)
-                    )
-                }
+        if (message.content.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .clip(bubbleShape)
+                    .background(bubbleColor)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                MarkdownText(
+                    markdown = message.content,
+                    style = TextStyle(color = textColor, fontSize = 15.sp)
+                )
             }
         }
+
         if (message.hasGoToCartButton) {
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = onGoToCartClick,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722)), // Màu cam chốt đơn
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722)),
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .widthIn(max = 280.dp)
-                    .fillMaxWidth()
+                modifier = Modifier.widthIn(max = 280.dp)
             ) {
                 Icon(
                     Icons.Default.ShoppingCartCheckout,
-                    contentDescription = "Cart",
+                    contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Đi đến Giỏ hàng", fontWeight = FontWeight.Bold, color = Color.White)
             }
         }
+
         if (message.attachedProducts.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.widthIn(max = 300.dp)
-            ) {
-                items(message.attachedProducts) { product ->
-                    Card(
-                        modifier = Modifier
-                            .width(140.dp)
-                            .clickable { onProductClick(product.id) },
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(2.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column {
-                            AsyncImage(
-                                model = product.images.firstOrNull() ?: "",
-                                contentDescription = product.name,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(100.dp),
-                                contentScale = ContentScale.Crop
-                            )
+            ProductSuggestionsRow(message.attachedProducts, onProductClick)
+        }
 
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text(
-                                    product.name,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = formatVietnameseCurrency(product.price),
-                                    color = GunplaBlue,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+        if (message.attachedPosts.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            MarketplaceSuggestionsRow(message.attachedPosts, onPostClick)
+        }
+    }
+}
+
+@Composable
+private fun ProductSuggestionsRow(
+    products: List<Product>,
+    onProductClick: (String) -> Unit
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.widthIn(max = 300.dp)
+    ) {
+        items(products, key = { it.id }) { product ->
+            Card(
+                modifier = Modifier
+                    .width(140.dp)
+                    .clickable { onProductClick(product.id) },
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(2.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column {
+                    AsyncImage(
+                        model = product.images.firstOrNull() ?: product.imageUrl,
+                        contentDescription = product.name,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp),
+                        contentScale = ContentScale.Crop
+                    )
+
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        Text(
+                            product.name,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = formatVietnameseCurrency(product.price),
+                            color = GunplaBlue,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
         }
-
     }
-    if (message.attachedPosts.isNotEmpty()) {
-        Spacer(modifier = Modifier.height(8.dp))
+}
+
+@Composable
+private fun MarketplaceSuggestionsRow(
+    posts: List<Post>,
+    onPostClick: (String) -> Unit
+) {
+    Column {
         Text(
-            "🛒 Góc sang nhượng:",
+            "Góc sang nhượng:",
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             color = Color.Gray,
@@ -489,111 +558,114 @@ fun AIChatBubble(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.widthIn(max = 300.dp)
         ) {
-            items(message.attachedPosts) { post ->
-                if (post.status == "DELETED") {
-                    Card(
-                        modifier = Modifier
-                            .width(150.dp)
-                            .height(180.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5)),
-                        elevation = CardDefaults.cardElevation(0.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Deleted",
-                                tint = Color.LightGray,
-                                modifier = Modifier.size(40.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Bài viết này đã bị xóa hoặc bị ẩn bởi người bán.",
-                                fontSize = 12.sp,
-                                color = Color.Gray,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                } else {
-                    Card(
-                        modifier = Modifier
-                            .width(150.dp)
-                            .clickable { onPostClick(post.id) },
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
-                        elevation = CardDefaults.cardElevation(2.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column {
-                            Box {
-                                AsyncImage(
-                                    model = post.images.firstOrNull() ?: "",
-                                    contentDescription = post.title,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(100.dp),
-                                    contentScale = ContentScale.Crop
-                                )
-                                val tagColor =
-                                    if (post.condition == "USED") Color.Red else Color(0xFF4CAF50)
-                                val tagText = if (post.condition == "USED") "Đã ráp" else "Mới"
-                                Surface(
-                                    modifier = Modifier
-                                        .align(Alignment.TopStart)
-                                        .padding(4.dp),
-                                    color = tagColor,
-                                    shape = RoundedCornerShape(4.dp)
-                                ) {
-                                    Text(
-                                        tagText,
-                                        color = Color.White,
-                                        fontSize = 9.sp,
-                                        modifier = Modifier.padding(
-                                            horizontal = 4.dp,
-                                            vertical = 2.dp
-                                        )
-                                    )
-                                }
-                            }
-
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text(
-                                    post.title,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = formatVietnameseCurrency(post.price),
-                                    color = Color(0xFFFF5722),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "👤 ${post.userName}",
-                                    color = Color.Gray,
-                                    fontSize = 10.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-
+            items(posts, key = { it.id }) { post ->
+                MarketplacePostCard(post = post, onPostClick = onPostClick)
             }
         }
     }
 }
 
+@Composable
+private fun MarketplacePostCard(
+    post: Post,
+    onPostClick: (String) -> Unit
+) {
+    if (post.status == "DELETED") {
+        Card(
+            modifier = Modifier
+                .width(150.dp)
+                .height(180.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5)),
+            elevation = CardDefaults.cardElevation(0.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = null,
+                    tint = Color.LightGray,
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Bài viết này đã bị xóa hoặc bị ẩn bởi người bán.",
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+        return
+    }
+
+    Card(
+        modifier = Modifier
+            .width(150.dp)
+            .clickable { onPostClick(post.id) },
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+        elevation = CardDefaults.cardElevation(2.dp),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column {
+            Box {
+                AsyncImage(
+                    model = post.images.firstOrNull() ?: "",
+                    contentDescription = post.title,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    contentScale = ContentScale.Crop
+                )
+                val tagColor = if (post.condition == "USED") Color.Red else Color(0xFF4CAF50)
+                val tagText = if (post.condition == "USED") "Đã ráp" else "Mới"
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(4.dp),
+                    color = tagColor,
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        tagText,
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text(
+                    post.title,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = formatVietnameseCurrency(post.price),
+                    color = Color(0xFFFF5722),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Người bán: ${post.userName}",
+                    color = Color.Gray,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
 
 @Composable
 fun AILoadingBubble() {
@@ -619,11 +691,11 @@ fun formatMessageTime(timestamp: Long): String {
 
     val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
     val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
-    val dayOfWeekFormat = SimpleDateFormat("EEE HH:mm", Locale("vi", "VN"))
+    val dayOfWeekFormat = SimpleDateFormat("EEE HH:mm", Locale.forLanguageTag("vi-VN"))
 
     return when {
         now.get(Calendar.YEAR) == messageTime.get(Calendar.YEAR) &&
-                now.get(Calendar.DAY_OF_YEAR) == messageTime.get(Calendar.DAY_OF_YEAR) -> {
+            now.get(Calendar.DAY_OF_YEAR) == messageTime.get(Calendar.DAY_OF_YEAR) -> {
             timeFormat.format(messageTime.time)
         }
 

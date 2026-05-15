@@ -39,8 +39,8 @@ fun AdminVoucherScreen(
     val filteredVouchers by viewModel.filteredVouchers.collectAsState()
     var selectedTabIndex by rememberSaveable { mutableStateOf(0) }
     val isLoading by viewModel.isLoading.collectAsState()
-    val activeVouchers = filteredVouchers.filter { it.usedCount < it.usageLimit && it.isActive }
-    val depletedVouchers = filteredVouchers.filter { it.usedCount >= it.usageLimit || !it.isActive }
+    val activeVouchers = filteredVouchers.filter { (it.usageLimit == 0L || it.usedCount < it.usageLimit) && it.isActive }
+    val depletedVouchers = filteredVouchers.filter { (it.usageLimit > 0 && it.usedCount >= it.usageLimit) || !it.isActive }
     LaunchedEffect(Unit) {
         viewModel.fetchAllVouchersForAdmin()
     }
@@ -154,7 +154,7 @@ fun AdminVoucherScreen(
 @Composable
 fun AdminVoucherCard(voucher: Voucher, onToggle: () -> Unit, onClick: () -> Unit) {
     val formatter = DecimalFormat("#,###")
-    val isDepleted = voucher.usedCount >= voucher.usageLimit || !voucher.isActive
+    val isDepleted = (voucher.usageLimit > 0 && voucher.usedCount >= voucher.usageLimit) || !voucher.isActive
 
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },

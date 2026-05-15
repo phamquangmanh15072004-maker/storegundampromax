@@ -14,15 +14,36 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeout
+import java.util.UUID
 import javax.inject.Inject
-import kotlin.collections.get
+import kotlin.coroutines.resume
 
-data class UploadingMedia(val uri: Uri, val isVideo: Boolean)
+enum class PendingMessageStatus {
+    SENDING,
+    FAILED
+}
+
+data class PendingChatMessage(
+    val id: String,
+    val channelId: String,
+    val senderId: String,
+    val content: String,
+    val timestamp: Long,
+    val type: String = "TEXT",
+    val localUri: Uri? = null,
+    val mediaUrl: String = "",
+    val replyToId: String? = null,
+    val isVideo: Boolean = false,
+    val status: PendingMessageStatus = PendingMessageStatus.SENDING,
+    val errorMessage: String = ""
+)
 
 @HiltViewModel
 class ChatDetailViewModel @Inject constructor(
@@ -34,11 +55,11 @@ class ChatDetailViewModel @Inject constructor(
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages = _messages.asStateFlow()
 
+    private val _pendingMessages = MutableStateFlow<List<PendingChatMessage>>(emptyList())
+    val pendingMessages = _pendingMessages.asStateFlow()
+
     private val _currentChannel = MutableStateFlow<ChatChannel?>(null)
     val currentChannel = _currentChannel.asStateFlow()
-
-    private val _uploadingMedia = MutableStateFlow<UploadingMedia?>(null)
-    val uploadingMedia = _uploadingMedia.asStateFlow()
 
     private val _partnerAvatarUrl = MutableStateFlow<String?>(null)
     val partnerAvatarUrl = _partnerAvatarUrl.asStateFlow()
@@ -46,25 +67,21 @@ class ChatDetailViewModel @Inject constructor(
     val currentUserId = auth.currentUser?.uid ?: ""
 
     fun loadMessages(channelId: String) {
-        // 1. Lắng nghe tin nhắn
         viewModelScope.launch {
             chatRepo.getMessages(channelId).collect { listMsg ->
                 _messages.value = listMsg.filter { !it.deletedBy.contains(currentUserId) }
             }
         }
 
-        // 2. Lắng nghe thông tin Channel & TỰ ĐỘNG DẬP THÔNG BÁO ĐỎ
         viewModelScope.launch {
             firestore.collection("channels").document(channelId)
-                .addSnapshotListener { snapshot, error ->
+                .addSnapshotListener { snapshot, _ ->
                     if (snapshot != null && snapshot.exists()) {
                         _currentChannel.value = snapshot.toObject(ChatChannel::class.java)
 
-                        // 🌟 BỘ DẬP LỬA NẰM Ở ĐÂY: Hễ thấy có tin chưa đọc là ép về 0 ngay lập tức!
                         try {
-                            val unreadMap = snapshot.get("unreadCounts") as? Map<String, Number>
-                            val myUnread = unreadMap?.get(currentUserId)?.toLong() ?: 0L
-
+                            val unreadMap = snapshot.get("unreadCounts") as? Map<*, *>
+                            val myUnread = (unreadMap?.get(currentUserId) as? Number)?.toLong() ?: 0L
                             if (myUnread > 0L) {
                                 firestore.collection("channels").document(channelId)
                                     .update("unreadCounts.$currentUserId", 0)
@@ -92,84 +109,145 @@ class ChatDetailViewModel @Inject constructor(
     }
 
     fun sendMessage(channelId: String, content: String, replyToId: String? = null) {
-        if (content.isBlank()) return
+        val trimmed = content.trim()
+        if (trimmed.isBlank()) return
 
-        val messageId = firestore.collection("channels").document(channelId).collection("messages").document().id
-        val newMessage = hashMapOf(
-            "id" to messageId, "senderId" to currentUserId, "content" to content,
-            "type" to "TEXT", "mediaUrl" to "", "timestamp" to System.currentTimeMillis(),
-            "replyToId" to replyToId, "deletedBy" to emptyList<String>()
+        val pending = PendingChatMessage(
+            id = newPendingId(),
+            channelId = channelId,
+            senderId = currentUserId,
+            content = trimmed,
+            timestamp = System.currentTimeMillis(),
+            replyToId = replyToId
         )
 
-        viewModelScope.launch {
-            firestore.collection("channels").document(channelId).collection("messages").document(messageId).set(newMessage)
-            val channel = _currentChannel.value
-            val partnerId = if (channel?.userId == currentUserId) channel.receiverId else channel?.userId
-
-            val updateData = mutableMapOf<String, Any>(
-                "lastMessage" to content,
-                "lastUpdated" to System.currentTimeMillis(),
-                "lastSenderId" to currentUserId
-            )
-
-            if (!partnerId.isNullOrBlank()) {
-                updateData["unreadCounts.$partnerId"] = FieldValue.increment(1)
-
-                val senderName = auth.currentUser?.displayName?.takeIf { it.isNotBlank() } ?: "Một người dùng"
-                NotificationHelper.sendChatPushNotification(
-                    receiverId = partnerId,
-                    senderName = senderName,
-                    messageContent = content,
-                    channelId = channelId
-                )
-            }
-
-            firestore.collection("channels").document(channelId).update(updateData)
-        }
+        addPending(pending)
+        sendPendingMessage(pending)
     }
 
     fun sendMedia(channelId: String, uri: Uri, isVideo: Boolean) {
+        val pending = PendingChatMessage(
+            id = newPendingId(),
+            channelId = channelId,
+            senderId = currentUserId,
+            content = if (isVideo) "[Đã gửi video]" else "[Đã gửi ảnh]",
+            timestamp = System.currentTimeMillis(),
+            type = if (isVideo) "VIDEO" else "IMAGE",
+            localUri = uri,
+            isVideo = isVideo
+        )
+
+        addPending(pending)
+        sendPendingMessage(pending)
+    }
+
+    fun retryPendingMessage(pendingId: String) {
+        val pending = _pendingMessages.value.firstOrNull { it.id == pendingId } ?: return
+        val retrying = pending.copy(
+            status = PendingMessageStatus.SENDING,
+            errorMessage = "",
+            timestamp = System.currentTimeMillis()
+        )
+        replacePending(retrying)
+        sendPendingMessage(retrying)
+    }
+
+    fun removePendingMessage(pendingId: String) {
+        _pendingMessages.value = _pendingMessages.value.filterNot { it.id == pendingId }
+    }
+
+    private fun sendPendingMessage(pending: PendingChatMessage) {
         viewModelScope.launch {
-            _uploadingMedia.value = UploadingMedia(uri, isVideo)
-            val url = uploadMediaToCloudinary(uri, isVideo)
-
-            if (url != null) {
-                val messageId = firestore.collection("channels").document(channelId).collection("messages").document().id
-                val content = if (isVideo) "[Đã gửi video]" else "[Đã gửi ảnh]"
-                val type = if (isVideo) "VIDEO" else "IMAGE"
-
-                val newMessage = hashMapOf(
-                    "id" to messageId, "senderId" to currentUserId, "content" to content,
-                    "type" to type, "mediaUrl" to url, "timestamp" to System.currentTimeMillis(),
-                    "replyToId" to null, "deletedBy" to emptyList<String>()
-                )
-
-                firestore.collection("channels").document(channelId).collection("messages").document(messageId).set(newMessage)
-
-                val channel = _currentChannel.value
-                val partnerId = if (channel?.userId == currentUserId) channel.receiverId else channel?.userId
-
-                val updateData = mutableMapOf<String, Any>(
-                    "lastMessage" to content,
-                    "lastUpdated" to System.currentTimeMillis(),
-                    "lastSenderId" to currentUserId
-                )
-
-                if (!partnerId.isNullOrBlank()) {
-                    updateData["unreadCounts.$partnerId"] = FieldValue.increment(1)
-
-                    val senderName = auth.currentUser?.displayName?.takeIf { it.isNotBlank() } ?: "Một người dùng"
-                    NotificationHelper.sendChatPushNotification(
-                        receiverId = partnerId,
-                        senderName = senderName,
-                        messageContent = content,
-                        channelId = channelId
-                    )
+            try {
+                val mediaUrl = if (pending.type == "IMAGE" || pending.type == "VIDEO") {
+                    val localUri = pending.localUri ?: throw IllegalStateException("Không tìm thấy file cần gửi.")
+                    val url = withTimeout(CHAT_MEDIA_UPLOAD_TIMEOUT_MS) {
+                        uploadMediaToCloudinary(localUri, pending.isVideo)
+                    }
+                    if (url.isNullOrBlank()) throw IllegalStateException("Upload media thất bại.")
+                    url
+                } else {
+                    pending.mediaUrl
                 }
 
-                firestore.collection("channels").document(channelId).update(updateData)
+                val messageId = pending.id
+
+                val newMessage = hashMapOf(
+                    "id" to messageId,
+                    "channelId" to pending.channelId,
+                    "senderId" to currentUserId,
+                    "content" to pending.content,
+                    "type" to pending.type,
+                    "mediaUrl" to mediaUrl,
+                    "timestamp" to System.currentTimeMillis(),
+                    "replyToId" to pending.replyToId,
+                    "deletedBy" to emptyList<String>()
+                )
+
+                withTimeout(CHAT_SEND_TIMEOUT_MS) {
+                    firestore.collection("channels")
+                        .document(pending.channelId)
+                        .collection("messages")
+                        .document(messageId)
+                        .set(newMessage)
+                        .await()
+                }
+
+                removePendingMessage(pending.id)
+
+                try {
+                    withTimeout(CHAT_SEND_TIMEOUT_MS) {
+                        updateChannelAfterSend(pending.channelId, pending.content)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            } catch (e: TimeoutCancellationException) {
+                markPendingFailed(pending.id, "Mạng chậm, chưa gửi được. Nhấn để thử lại.")
+            } catch (e: Exception) {
+                markPendingFailed(pending.id, "Gửi lỗi. Nhấn để thử lại.")
             }
-            _uploadingMedia.value = null
+        }
+    }
+
+    private fun addPending(pending: PendingChatMessage) {
+        _pendingMessages.value = _pendingMessages.value + pending
+    }
+
+    private fun replacePending(pending: PendingChatMessage) {
+        _pendingMessages.value = _pendingMessages.value.map { if (it.id == pending.id) pending else it }
+    }
+
+    private fun markPendingFailed(pendingId: String, message: String) {
+        _pendingMessages.value = _pendingMessages.value.map {
+            if (it.id == pendingId) it.copy(status = PendingMessageStatus.FAILED, errorMessage = message) else it
+        }
+    }
+
+    private suspend fun updateChannelAfterSend(channelId: String, lastMessage: String) {
+        val channel = _currentChannel.value
+        val partnerId = if (channel?.userId == currentUserId) channel.receiverId else channel?.userId
+
+        val updateData = mutableMapOf<String, Any>(
+            "lastMessage" to lastMessage,
+            "lastUpdated" to System.currentTimeMillis(),
+            "lastSenderId" to currentUserId
+        )
+
+        if (!partnerId.isNullOrBlank()) {
+            updateData["unreadCounts.$partnerId"] = FieldValue.increment(1)
+        }
+
+        firestore.collection("channels").document(channelId).update(updateData).await()
+
+        if (!partnerId.isNullOrBlank()) {
+            val senderName = auth.currentUser?.displayName?.takeIf { it.isNotBlank() } ?: "Một người dùng"
+            NotificationHelper.sendChatPushNotification(
+                receiverId = partnerId,
+                senderName = senderName,
+                messageContent = lastMessage,
+                channelId = channelId
+            )
         }
     }
 
@@ -201,19 +279,36 @@ class ChatDetailViewModel @Inject constructor(
         }
     }
 
-    private suspend fun uploadMediaToCloudinary(uri: Uri, isVideo: Boolean): String? = suspendCancellableCoroutine { cont ->
-        val type = if (isVideo) "video" else "image"
-        try {
-            MediaManager.get().upload(uri).unsigned("gundame-storepromax").option("resource_type", type)
-                .callback(object : UploadCallback {
-                    override fun onStart(requestId: String) {}
-                    override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
-                    override fun onSuccess(requestId: String, resultData: Map<*, *>) { cont.resumeWith(Result.success(resultData["secure_url"] as? String)) }
-                    override fun onError(requestId: String, error: ErrorInfo) { cont.resumeWith(Result.success(null)) }
-                    override fun onReschedule(requestId: String, error: ErrorInfo) {}
-                }).dispatch()
-        } catch (e: Exception) {
-            cont.resumeWith(Result.success(null))
+    private suspend fun uploadMediaToCloudinary(uri: Uri, isVideo: Boolean): String? =
+        suspendCancellableCoroutine { cont ->
+            val type = if (isVideo) "video" else "image"
+            try {
+                MediaManager.get().upload(uri)
+                    .unsigned("gundame-storepromax")
+                    .option("resource_type", type)
+                    .callback(object : UploadCallback {
+                        override fun onStart(requestId: String) = Unit
+                        override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) = Unit
+                        override fun onSuccess(requestId: String, resultData: Map<*, *>) {
+                            if (cont.isActive) cont.resume(resultData["secure_url"] as? String)
+                        }
+
+                        override fun onError(requestId: String, error: ErrorInfo) {
+                            if (cont.isActive) cont.resume(null)
+                        }
+
+                        override fun onReschedule(requestId: String, error: ErrorInfo) = Unit
+                    })
+                    .dispatch()
+            } catch (e: Exception) {
+                if (cont.isActive) cont.resume(null)
+            }
         }
+
+    private fun newPendingId(): String = "local-${UUID.randomUUID()}"
+
+    companion object {
+        private const val CHAT_SEND_TIMEOUT_MS = 15_000L
+        private const val CHAT_MEDIA_UPLOAD_TIMEOUT_MS = 45_000L
     }
 }
