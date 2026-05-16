@@ -162,6 +162,7 @@ fun OrderHistoryScreen(
                             isAnyProcessing = processingOrderId != null,
                             isPaymentExpired = isPaymentExpired,
                             onCancelClick = { orderToCancel = order },
+                            onReviewClick = { navController.navigate("write_review_screen/${order.id}") },
                             onReturnClick = { orderToReturn = order },
                             onInputTrackingClick = { orderToInputTracking = order },
                             onViewReceiptClick = { orderToViewReceipt = it },
@@ -275,6 +276,7 @@ fun OrderItem(
     isAnyProcessing: Boolean,
     isPaymentExpired: Boolean,
     onCancelClick: () -> Unit,
+    onReviewClick: () -> Unit,
     onReturnClick: () -> Unit,
     onInputTrackingClick: () -> Unit,
     onViewReceiptClick: (Order) -> Unit,
@@ -443,10 +445,11 @@ fun OrderItem(
                 }
 
                 // 🌟 ĐÃ KHÔI PHỤC NÚT ĐÁNH GIÁ/YÊU CẦU TRẢ HÀNG 3 NGÀY KHI ĐƠN COMPLETED
-                if (order.status == "COMPLETED") {
+                if (order.status == "COMPLETED" || order.status == "RETURN_REJECTED") {
                     val threeDaysInMillis = 3L * 24 * 60 * 60 * 1000
                     val isWithinReturnPeriod = (System.currentTimeMillis() - order.updatedAt) <= threeDaysInMillis
                     val hasReviewed = order.reviewedProducts.isNotEmpty()
+                    val canRequestReturn = order.status == "COMPLETED" && isWithinReturnPeriod
 
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -454,13 +457,15 @@ fun OrderItem(
                             OutlinedButton(onClick = { }, enabled = false, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color.LightGray), colors = ButtonDefaults.outlinedButtonColors(disabledContentColor = Color.Gray), modifier = Modifier.height(40.dp)) {
                                 Text("Đã đánh giá", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                             }
-                        } else if (isWithinReturnPeriod) {
+                        } else {
+                            Button(onClick = onReviewClick, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)), modifier = Modifier.height(40.dp)) {
+                                Text("Đánh giá", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        if (canRequestReturn) {
+                            Spacer(modifier = Modifier.width(8.dp))
                             OutlinedButton(onClick = onReturnClick, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFFE65100)), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE65100)), modifier = Modifier.height(40.dp)) {
                                 Text("Yêu cầu Trả hàng / Hoàn tiền", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            }
-                        } else {
-                            OutlinedButton(onClick = { }, enabled = false, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color.LightGray), colors = ButtonDefaults.outlinedButtonColors(disabledContentColor = Color.Gray), modifier = Modifier.height(40.dp)) {
-                                Text("Hết hạn Trả hàng", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
