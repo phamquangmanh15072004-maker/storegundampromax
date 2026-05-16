@@ -475,6 +475,12 @@ class AIChatViewModel @Inject constructor(
                 "AI_TIMEOUT" -> "GunplaAI phản hồi hơi lâu. Bạn thử gửi lại sau vài giây nhé."
                 "AI_NOT_CONFIGURED", "AI_PROVIDER_INVALID", "AI_MODEL_INVALID", "AI_AUTH_INVALID", "AI_UNAVAILABLE" ->
                     "GunplaAI backend chưa sẵn sàng hoặc cấu hình Vertex AI chưa đúng. Bạn thử lại sau ít phút nhé."
+                "AI_PERMISSION_DENIED" ->
+                    "GunplaAI chưa được cấp quyền Vertex AI trên backend. Bạn thử lại sau khi quản trị viên cập nhật cấu hình nhé."
+                "AI_MODEL_NOT_FOUND" ->
+                    "Model GunplaAI chưa khả dụng ở vùng Vertex AI hiện tại. Bạn thử lại sau khi backend cập nhật cấu hình nhé."
+                "AI_QUOTA_EXCEEDED" ->
+                    "GunplaAI đang hết hạn mức hoặc billing Vertex AI chưa sẵn sàng. Bạn thử lại sau nhé."
                 "BAD_REQUEST", "EMPTY_MESSAGE" -> e.message ?: "Nội dung gửi lên GunplaAI chưa hợp lệ."
                 else -> e.message ?: "Hệ thống AI đang gặp sự cố tạm thời. Bạn thử lại sau ít phút nhé."
             }
