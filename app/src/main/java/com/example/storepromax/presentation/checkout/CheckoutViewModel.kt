@@ -327,6 +327,12 @@ class CheckoutViewModel @Inject constructor(
         viewModelScope.launch {
             _isProcessing.value = true
             val finalTotal = finalTotalPrice.value
+            if (finalTotal <= 0L && paymentMethod.value == "BANKING") {
+                paymentMethod.value = "COD"
+                _uiEvent.send("Đơn hàng 0đ chỉ hỗ trợ thanh toán COD.")
+                _isProcessing.value = false
+                return@launch
+            }
             val orderId = UUID.randomUUID().toString()
             val dCode = _selectedDiscountVoucher.value?.code?.takeIf { it.isNotBlank() }
             val fCode = _selectedFreeshipVoucher.value?.code?.takeIf { it.isNotBlank() }
@@ -426,7 +432,14 @@ class CheckoutViewModel @Inject constructor(
 
     fun onNameChange(v: String) { name.value = v }
     fun onPhoneChange(v: String) { phone.value = v }
-    fun onPaymentMethodChange(v: String) { paymentMethod.value = v }
+    fun onPaymentMethodChange(v: String) {
+        if (v == "BANKING" && finalTotalPrice.value <= 0L) {
+            paymentMethod.value = "COD"
+            viewModelScope.launch { _uiEvent.send("Đơn hàng 0đ chỉ hỗ trợ thanh toán COD.") }
+            return
+        }
+        paymentMethod.value = v
+    }
     fun onSpecificAddressChange(v: String) { specificAddress.value = v }
 
     companion object {

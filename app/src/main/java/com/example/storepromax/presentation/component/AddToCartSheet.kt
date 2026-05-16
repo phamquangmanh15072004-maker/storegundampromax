@@ -43,6 +43,7 @@ fun AddToCartSheet(
     var quantityText by remember { mutableStateOf("1") }
     val safeQuantity = quantityText.toIntOrNull() ?: 1
     val isOutOfStock = product.stock <= 0
+    val canSubmitQuantity = !isOutOfStock && (quantityText.toIntOrNull() ?: 0) in 1..product.stock
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -137,7 +138,7 @@ fun AddToCartSheet(
                                 quantityText = ""
                             } else if (newValue.all { it.isDigit() }) {
                                 val entered = newValue.toIntOrNull() ?: 1
-                                quantityText = if (entered > product.stock) product.stock.toString() else entered.toString()
+                                quantityText = entered.coerceIn(1, product.stock.coerceAtLeast(1)).toString()
                             }
                         },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -172,10 +173,10 @@ fun AddToCartSheet(
             Spacer(modifier = Modifier.height(32.dp))
             Button(
                 onClick = {
-                    val finalQty = quantityText.toIntOrNull() ?: 1
+                    val finalQty = (quantityText.toIntOrNull() ?: 1).coerceIn(1, product.stock.coerceAtLeast(1))
                     onConfirm(finalQty)
                 },
-                enabled = !isOutOfStock,
+                enabled = canSubmitQuantity,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(

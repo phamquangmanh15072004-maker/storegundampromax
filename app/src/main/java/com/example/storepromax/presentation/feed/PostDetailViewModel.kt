@@ -91,7 +91,7 @@ class PostDetailViewModel @Inject constructor(
 
         viewModelScope.launch {
             val user = auth.currentUser
-            val userName = user?.displayName.takeIf { !it.isNullOrBlank() } ?: "Người dùng"
+            val userName = getCurrentUserDisplayName(currentUserId)
             val userAvatar = user?.photoUrl?.toString() ?: ""
 
             val newComment = Comment(
@@ -118,35 +118,43 @@ class PostDetailViewModel @Inject constructor(
                         val targetUserDoc = firestore.collection("users").document(replyingToUserId).get().await()
                         val token = targetUserDoc.getString("fcmToken") ?: ""
 
-                        if (token.isNotEmpty()) {
-                            notificationRepository.sendCommentNotification(
-                                receiverToken = token,
-                                title = "$userName đã trả lời bình luận của bạn",
-                                body = "Bạn: $shortOriginal\n$userName: $content",
-                                postId = postId,
-                                receiverUserId = replyingToUserId
-                            )
-                        }
+                        notificationRepository.sendCommentNotification(
+                            receiverToken = token,
+                            title = "$userName đã trả lời bình luận của bạn",
+                            body = "Bạn: $shortOriginal\n$userName: $content",
+                            postId = postId,
+                            receiverUserId = replyingToUserId
+                        )
                     }
 
                     if (postOwnerId.isNotEmpty() && postOwnerId != currentUserId && postOwnerId != replyingToUserId) {
                         val ownerDoc = firestore.collection("users").document(postOwnerId).get().await()
                         val ownerToken = ownerDoc.getString("fcmToken") ?: ""
 
-                        if (ownerToken.isNotEmpty()) {
-                            notificationRepository.sendCommentNotification(
-                                receiverToken = ownerToken,
-                                title = "$userName đã bình luận về bài viết của bạn",
-                                body = content,
-                                postId = postId,
-                                receiverUserId = postOwnerId
-                            )
-                        }
+                        notificationRepository.sendCommentNotification(
+                            receiverToken = ownerToken,
+                            title = "$userName đã bình luận về bài viết của bạn",
+                            body = content,
+                            postId = postId,
+                            receiverUserId = postOwnerId
+                        )
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             }
+        }
+    }
+
+    private suspend fun getCurrentUserDisplayName(userId: String): String {
+        return try {
+            val userDoc = firestore.collection("users").document(userId).get().await()
+            userDoc.getString("name")
+                ?.takeIf { it.isNotBlank() }
+                ?: auth.currentUser?.displayName?.takeIf { it.isNotBlank() }
+                ?: "Người dùng"
+        } catch (e: Exception) {
+            auth.currentUser?.displayName?.takeIf { it.isNotBlank() } ?: "Người dùng"
         }
     }
 

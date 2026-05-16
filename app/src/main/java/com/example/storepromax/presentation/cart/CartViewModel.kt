@@ -159,6 +159,13 @@ class CartViewModel @Inject constructor(
     }
 
     fun updateQuantity(item: CartItem, newQuantity: Int) {
+        if (item.product.stock <= 0) {
+            viewModelScope.launch {
+                cartRepository.updateSelection(item.product.id, false)
+                checkVoucherValidity()
+            }
+            return
+        }
         val valid = newQuantity.coerceIn(1, item.product.stock)
         viewModelScope.launch {
             cartRepository.updateQuantity(item.product.id, valid)

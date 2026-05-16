@@ -124,7 +124,7 @@ fun FeedScreen(
                             }
                         )
                     } else {
-                        Text("CHỢ GUNDAM", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = Color(0xFF0D47A1))
+                        Text("Chợ Gundam", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = Color(0xFF0D47A1))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White),
@@ -264,14 +264,14 @@ fun FeedPostItem(
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(2.dp),
-        shape = RoundedCornerShape(0.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+        elevation = CardDefaults.cardElevation(1.dp),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
     ) {
         // 🔥 BỌC TOÀN BỘ BẰNG BOX ĐỂ XỬ LÝ LỚP PHỦ MỜ (HIDDEN)
         Box {
             // -- NỘI DUNG CHÍNH CỦA BÀI VIẾT --
-            Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
+            Column(modifier = Modifier.padding(top = 14.dp, bottom = 4.dp)) {
                 // Header (Avatar, Tên, Xóa)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -280,13 +280,13 @@ fun FeedPostItem(
                     AsyncImage(
                         model = post.userAvatar.takeIf { it.isNotBlank() } ?: "https://ui-avatars.com/api/?name=${post.userName}",
                         contentDescription = "Avatar",
-                        modifier = Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFEEEEEE)),
+                        modifier = Modifier.size(44.dp).clip(CircleShape).background(Color(0xFFEEEEEE)),
                         contentScale = ContentScale.Crop
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(post.userName.ifBlank { "Thành viên ẩn danh" }, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.Black)
-                        Text(post.createdAt.toRelativeTime(), color = Color.Gray, fontSize = 12.sp)
+                        Text(post.userName.ifBlank { "Thành viên ẩn danh" }, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF111827))
+                        Text(post.createdAt.toRelativeTime(), color = Color(0xFF6B7280), fontSize = 12.sp)
                     }
                     if (isOwner) {
                         IconButton(onClick = onDeleteClick, modifier = Modifier.size(28.dp)) {
@@ -299,10 +299,12 @@ fun FeedPostItem(
 
                 // Content (Tiêu đề, Giá, Tags, Mô tả)
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Text(post.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(post.title, fontWeight = FontWeight.Bold, fontSize = 17.sp, lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Color(0xFF111827))
 
                     Row(modifier = Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(post.price.toVietnameseCurrency(), color = Color(0xFFD32F2F), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                        Surface(color = Color(0xFFFFEBEE), shape = RoundedCornerShape(8.dp)) {
+                            Text(post.price.toVietnameseCurrency(), color = Color(0xFFD32F2F), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                        }
                         Spacer(modifier = Modifier.width(12.dp))
                         val (condText, condBg, condTextCol) = when (post.condition) {
                             "NEW" -> Triple("Mới", Color(0xFFE8F5E9), Color(0xFF2E7D32))
@@ -313,15 +315,15 @@ fun FeedPostItem(
                         }
 
                         Surface(color = condBg, shape = RoundedCornerShape(4.dp)) {
-                            Text(condText, fontSize = 10.sp, color = condTextCol, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            Text(condText, fontSize = 11.sp, color = condTextCol, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                         }
                         Spacer(modifier = Modifier.width(6.dp))
                         Surface(color = Color(0xFFF3E5F5), shape = RoundedCornerShape(4.dp)) {
-                            Text("Grade: ${post.grade}", fontSize = 10.sp, color = Color(0xFF6A1B9A), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            Text(post.grade, fontSize = 11.sp, color = Color(0xFF6A1B9A), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                         }
                     }
 
-                    Text(post.content, fontSize = 14.sp, color = Color(0xFF444444), maxLines = 3, overflow = TextOverflow.Ellipsis, lineHeight = 20.sp)
+                    Text(post.content, fontSize = 14.sp, color = Color(0xFF374151), maxLines = 3, overflow = TextOverflow.Ellipsis, lineHeight = 20.sp)
                 }
 
                 // Hình ảnh
@@ -337,7 +339,7 @@ fun FeedPostItem(
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(12.dp))
                             .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onLikeClick() }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -381,7 +383,7 @@ fun FeedPostItem(
                         )
                     }
                     Row(
-                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable { onCommentClick() }.padding(vertical = 8.dp),
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable { onCommentClick() }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center
                     ) {
                         Icon(Icons.Outlined.Chat, contentDescription = "Comment", tint = Color.Gray, modifier = Modifier.size(22.dp))
@@ -469,7 +471,9 @@ fun PostImageCarousel(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(300.dp)
+            .padding(horizontal = 16.dp)
+            .height(260.dp)
+            .clip(RoundedCornerShape(14.dp))
             .background(Color.Black)
     ) {
         HorizontalPager(

@@ -75,6 +75,7 @@ fun CheckoutScreen(
 
     val paymentMethod by viewModel.paymentMethod.collectAsState()
     val shippingMethod by viewModel.shippingMethod.collectAsState()
+    val bankingEnabled = finalTotal > 0L
 
     val availableVouchers by viewModel.availableVouchers.collectAsState()
     val selectedDiscountVoucher by viewModel.selectedDiscountVoucher.collectAsState()
@@ -107,6 +108,12 @@ fun CheckoutScreen(
             } else {
                 Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    LaunchedEffect(finalTotal, paymentMethod) {
+        if (finalTotal <= 0L && paymentMethod == "BANKING") {
+            viewModel.onPaymentMethodChange("COD")
         }
     }
 
@@ -241,7 +248,12 @@ fun CheckoutScreen(
                 SectionCard("Phương thức thanh toán") {
                     PaymentOptionItem("Thanh toán khi nhận hàng (COD)", Icons.Default.Money, paymentMethod == "COD") { viewModel.onPaymentMethodChange("COD") }
                     Spacer(Modifier.height(8.dp))
-                    PaymentOptionItem("Chuyển khoản an toàn qua PayOS", Icons.Default.QrCode, paymentMethod == "BANKING") { viewModel.onPaymentMethodChange("BANKING") }
+                    PaymentOptionItem(
+                        title = if (bankingEnabled) "Chuyển khoản an toàn qua PayOS" else "Chuyển khoản PayOS (không áp dụng cho đơn 0đ)",
+                        icon = Icons.Default.QrCode,
+                        selected = paymentMethod == "BANKING",
+                        enabled = bankingEnabled
+                    ) { viewModel.onPaymentMethodChange("BANKING") }
                 }
             }
 
@@ -763,16 +775,28 @@ fun SimpleTextField(state: String, onValue: (String) -> Unit, label: String, ico
 }
 
 @Composable
-fun PaymentOptionItem(title: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+fun PaymentOptionItem(
+    title: String,
+    icon: ImageVector,
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
     Surface(
-        Modifier.fillMaxWidth().clickable { onClick() },
+        Modifier.fillMaxWidth().clickable(enabled = enabled) { onClick() },
         border = BorderStroke(1.dp, if (selected) GunplaBlue else Color.LightGray),
-        color = if (selected) Color(0xFFE3F2FD) else Color.White, shape = RoundedCornerShape(8.dp)
+        color = if (!enabled) Color(0xFFF5F5F5) else if (selected) Color(0xFFE3F2FD) else Color.White,
+        shape = RoundedCornerShape(8.dp)
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = if (selected) GunplaBlue else Color.Gray)
+            Icon(icon, null, tint = if (!enabled) Color.LightGray else if (selected) GunplaBlue else Color.Gray)
             Spacer(Modifier.width(12.dp))
-            Text(title, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, fontSize = 14.sp)
+            Text(
+                title,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                fontSize = 14.sp,
+                color = if (enabled) Color.Black else Color.Gray
+            )
         }
     }
 }

@@ -570,7 +570,7 @@ fun CartItemRow(
     onQuantityChange: (Int) -> Unit
 ) {
     val formatter = DecimalFormat("#,###")
-    val isAvailable = item.product.isActive
+    val isAvailable = item.product.isActive && item.product.stock > 0
     Surface(
         color = if (isAvailable) Color.White else Color(0xFFF9FAFB),
         shape = RoundedCornerShape(8.dp),
@@ -600,7 +600,7 @@ fun CartItemRow(
                 )
                 if (!isAvailable) {
                     Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
-                        Text("NGỪNG BÁN", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                        Text(if (item.product.stock <= 0) "HẾT HÀNG" else "NGỪNG BÁN", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                     }
                 }
             }
@@ -657,15 +657,24 @@ fun InlineQuantityInput(quantity: Int, maxStock: Int, onQuantityChange: (Int) ->
     BasicTextField(
         value = textValue,
         onValueChange = { input ->
-            if (input.isEmpty() || (input.all { it.isDigit() } && input.length <= 4)) {
-                textValue = input
+            if (input.isEmpty()) {
+                textValue = ""
+                return@BasicTextField
+            }
+            if (input.all { it.isDigit() }) {
+                val maxAllowed = maxStock.coerceAtLeast(1)
+                val clamped = (input.toIntOrNull() ?: maxAllowed).coerceIn(1, maxAllowed)
+                textValue = clamped.toString()
+                if (clamped != quantity) {
+                    onQuantityChange(clamped)
+                }
             }
         },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(
             onDone = {
                 val newQty = textValue.toIntOrNull() ?: 1
-                val finalQty = newQty.coerceIn(1, maxStock)
+                val finalQty = newQty.coerceIn(1, maxStock.coerceAtLeast(1))
                 textValue = finalQty.toString()
                 onQuantityChange(finalQty)
                 focusManager.clearFocus()

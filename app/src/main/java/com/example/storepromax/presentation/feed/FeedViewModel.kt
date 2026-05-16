@@ -95,15 +95,15 @@ class FeedViewModel @Inject constructor(
             val postOwnerId = targetPost.userId
             val postTitle = targetPost.title
 
-            postRepository.toggleLike(postId, userId)
+            val toggleResult = postRepository.toggleLike(postId, userId)
+            if (toggleResult.isFailure) return@launch
 
             if (!isCurrentlyLiked && postOwnerId != userId) {
                 try {
                     val ownerDoc = firestore.collection("users").document(postOwnerId).get().await()
                     val ownerToken = ownerDoc.getString("fcmToken") ?: ""
 
-                    val user = auth.currentUser
-                    val senderName = user?.displayName.takeIf { !it.isNullOrBlank() } ?: "Ai đó"
+                    val senderName = getCurrentUserDisplayName(userId)
 
                     notificationRepository.sendLikeNotification(
                         receiverToken = ownerToken,
@@ -116,6 +116,18 @@ class FeedViewModel @Inject constructor(
                     e.printStackTrace()
                 }
             }
+        }
+    }
+
+    private suspend fun getCurrentUserDisplayName(userId: String): String {
+        return try {
+            val userDoc = firestore.collection("users").document(userId).get().await()
+            userDoc.getString("name")
+                ?.takeIf { it.isNotBlank() }
+                ?: auth.currentUser?.displayName?.takeIf { it.isNotBlank() }
+                ?: "Người dùng"
+        } catch (e: Exception) {
+            auth.currentUser?.displayName?.takeIf { it.isNotBlank() } ?: "Người dùng"
         }
     }
 

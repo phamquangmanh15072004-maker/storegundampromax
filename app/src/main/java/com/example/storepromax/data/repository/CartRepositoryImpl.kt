@@ -85,6 +85,8 @@ class CartRepositoryImpl @Inject constructor(
 
     override suspend fun addToCart(product: Product, quantity: Int): Result<Unit> {
         if (userId.isEmpty()) return Result.failure(Exception("Bạn chưa đăng nhập!"))
+        if (product.stock <= 0) return Result.failure(Exception("Sản phẩm này tạm hết hàng!"))
+        if (quantity <= 0) return Result.failure(Exception("Số lượng phải lớn hơn 0!"))
 
         return try {
             val cartRef = firestore.collection("carts").document(userId).collection("items").document(product.id)
