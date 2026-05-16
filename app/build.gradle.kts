@@ -57,6 +57,7 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation("androidx.lifecycle:lifecycle-process:2.10.0")
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -96,9 +97,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended:1.6.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     implementation("com.google.code.gson:gson:2.10.1")
-    implementation("com.cloudinary:cloudinary-android:2.5.0")
+    // The app only uses MediaManager uploads; core avoids Fresco native download/UI deps.
+    implementation("com.cloudinary:cloudinary-android-core:3.1.2")
 
-    implementation("io.github.sceneview:sceneview:2.0.3")
+    implementation("io.github.sceneview:sceneview:2.3.0")
     implementation("br.com.devsrsouza.compose.icons:font-awesome:1.1.0")
     implementation("androidx.multidex:multidex:2.0.1")
     val room_version = "2.6.1"

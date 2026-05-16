@@ -3,6 +3,7 @@ package com.example.storepromax.presentation.detail
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import android.view.MotionEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.*
@@ -21,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -62,6 +64,7 @@ fun Model3DScreen(
     var modelNode by remember { mutableStateOf<ModelNode?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var cameraDistance by remember { mutableFloatStateOf(4.0f) }
 
     // 🌟 THÊM BIẾN LƯU TRỮ SỐ BYTE ĐỂ HIỂN THỊ MB
     var downloadProgress by remember { mutableFloatStateOf(0f) }
@@ -72,6 +75,11 @@ fun Model3DScreen(
     val cameraNode = rememberCameraNode(engine) {
         position = Position(y = 0.5f, z = 4.0f)
         lookAt(centerNode)
+    }
+
+    LaunchedEffect(cameraDistance) {
+        cameraNode.position = Position(y = 0.5f, z = cameraDistance)
+        cameraNode.lookAt(centerNode)
     }
 
     DisposableEffect(Unit) {
@@ -171,7 +179,22 @@ fun Model3DScreen(
                 }
                 node != null -> {
                     Scene(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInteropFilter { event ->
+                                if (event.actionMasked == MotionEvent.ACTION_SCROLL) {
+                                    val scroll = event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+                                    if (scroll != 0f) {
+                                        cameraDistance = (cameraDistance - scroll * 0.35f)
+                                            .coerceIn(1.2f, 8.0f)
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            },
                         engine = engine,
                         modelLoader = modelLoader,
                         cameraNode = cameraNode,
