@@ -1,5 +1,8 @@
 package com.example.storepromax.presentation.admin.chat
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,6 +16,7 @@ import com.example.storepromax.domain.utils.NotificationHelper
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,7 +53,8 @@ data class PendingChatMessage(
 class ChatDetailViewModel @Inject constructor(
     private val chatRepo: ChatRepository,
     private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -159,6 +164,11 @@ class ChatDetailViewModel @Inject constructor(
     private fun sendPendingMessage(pending: PendingChatMessage) {
         viewModelScope.launch {
             try {
+                if (!hasNetworkConnection()) {
+                    markPendingFailed(pending.id, "Không có kết nối mạng. Nhấn để gửi lại.")
+                    return@launch
+                }
+
                 val mediaUrl = if (pending.type == "IMAGE" || pending.type == "VIDEO") {
                     val localUri = pending.localUri ?: throw IllegalStateException("Không tìm thấy file cần gửi.")
                     val url = withTimeout(CHAT_MEDIA_UPLOAD_TIMEOUT_MS) {
@@ -208,6 +218,15 @@ class ChatDetailViewModel @Inject constructor(
                 markPendingFailed(pending.id, "Gửi lỗi. Nhấn để thử lại.")
             }
         }
+    }
+
+    private fun hasNetworkConnection(): Boolean {
+        val connectivityManager = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     private fun addPending(pending: PendingChatMessage) {

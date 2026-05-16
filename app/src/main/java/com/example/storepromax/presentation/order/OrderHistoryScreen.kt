@@ -1,5 +1,6 @@
 package com.example.storepromax.presentation.order
 
+import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -69,6 +70,7 @@ fun OrderHistoryScreen(
     val allOrders by viewModel.orders.collectAsState()
     val banks by viewModel.banks.collectAsState()
     val processingOrderId by viewModel.processingOrderId.collectAsState()
+    val returnUploadProgress by viewModel.returnUploadProgress.collectAsState()
     val timeAllowedMillis = 5 * 60 * 1000L
 
     var selectedTabIndex by remember { mutableIntStateOf(initialTabIndex) }
@@ -227,7 +229,18 @@ fun OrderHistoryScreen(
         UserCancelOrderDialog(isPaid = orderToCancel!!.paymentStatus == "PAID", banks = banks, onDismiss = { orderToCancel = null }, onConfirm = { r, b, s, num, n -> viewModel.cancelOrder(orderToCancel!!.id, r, orderToCancel!!.paymentStatus == "PAID", b, s, num, n); orderToCancel = null })
     }
     if (orderToReturn != null) {
-        UserReturnOrderDialog(banks = banks, onDismiss = { orderToReturn = null }, onConfirm = { r, d, i, b, s, num, n -> viewModel.requestReturnRefund(orderToReturn!!.id, r, d, i, b, s, num, n) { success, msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show(); if (success) orderToReturn = null } })
+        UserReturnOrderDialog(
+            banks = banks,
+            isSubmitting = processingOrderId == orderToReturn!!.id,
+            uploadProgress = returnUploadProgress,
+            onDismiss = { orderToReturn = null },
+            onConfirm = { r, d, i, b, s, num, n ->
+                viewModel.requestReturnRefund(orderToReturn!!.id, r, d, i, b, s, num, n) { success, msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    if (success) orderToReturn = null
+                }
+            }
+        )
     }
     if (orderToInputTracking != null) {
         UserInputTrackingDialog(onDismiss = { orderToInputTracking = null }, onConfirm = { viewModel.submitReturnTrackingCode(orderToInputTracking!!.id, it) { s, m -> Toast.makeText(context, m, Toast.LENGTH_SHORT).show(); if (s) orderToInputTracking = null } })
@@ -556,6 +569,8 @@ fun RepayQRDialog(
 @Composable
 fun UserReturnOrderDialog(
     banks: List<VietQRBank>,
+    isSubmitting: Boolean,
+    uploadProgress: Float?,
     onDismiss: () -> Unit,
     onConfirm: (String, String, List<String>, String?, String?, String?, String?) -> Unit
 ) {
@@ -564,7 +579,6 @@ fun UserReturnOrderDialog(
     var selectedReason by remember { mutableStateOf(reasons[0]) }
     var description by remember { mutableStateOf("") }
     var selectedImages by remember { mutableStateOf<List<String>>(emptyList()) }
-    var isUploading by remember { mutableStateOf(false) }
 
     var selectedBank by remember { mutableStateOf<VietQRBank?>(null) }
     var accNum by remember { mutableStateOf("") }
@@ -575,13 +589,17 @@ fun UserReturnOrderDialog(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 3)
     ) { uris ->
         if (uris.isNotEmpty()) {
-            selectedImages = (selectedImages + uris.map { it.toString() }).take(3)
+            val validUris = uris.filter { uri -> isReturnEvidenceSizeAllowed(context, uri) }
+            if (validUris.size < uris.size) {
+                Toast.makeText(context, "Mỗi bằng chứng chỉ được tối đa 10MB.", Toast.LENGTH_SHORT).show()
+            }
+            selectedImages = (selectedImages + validUris.map { it.toString() }).take(3)
         }
     }
-    val canConfirm = selectedImages.isNotEmpty() && selectedBank != null && accNum.isNotBlank() && accName.isNotBlank() && !isUploading
+    val canConfirm = selectedImages.isNotEmpty() && selectedBank != null && accNum.isNotBlank() && accName.isNotBlank() && !isSubmitting
 
     AlertDialog(
-        onDismissRequest = { if (!isUploading) onDismiss() },
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
         containerColor = Color.White,
         title = { Text("Yêu cầu Trả hàng / Hoàn tiền", fontWeight = FontWeight.Bold) },
         text = {
@@ -623,7 +641,7 @@ fun UserReturnOrderDialog(
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
-                Text("Hình ảnh bằng chứng (Tối đa 3):", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                Text("Bằng chứng ảnh/video (Tối đa 3, mỗi file tối đa 10MB):", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -675,6 +693,44 @@ fun UserReturnOrderDialog(
                     }
                 }
 
+                if (isSubmitting) {
+                    val progress = uploadProgress?.coerceIn(0f, 1f) ?: 0f
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Surface(
+                        color = Color(0xFFEAF3FF),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (progress < 1f) "Đang tải bằng chứng..." else "Đang gửi yêu cầu...",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0D47A1)
+                                )
+                                Text(
+                                    text = "${(progress * 100).toInt()}%",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0D47A1)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(99.dp)),
+                                color = Color(0xFF0D47A1),
+                                trackColor = Color.White
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("Thông tin nhận hoàn tiền:", fontWeight = FontWeight.Bold, color = Color(0xFFE65100), fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -703,17 +759,16 @@ fun UserReturnOrderDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    isUploading = true
                     onConfirm(selectedReason, description, selectedImages, selectedBank?.bin, selectedBank?.shortName, accNum, accName)
                 },
                 enabled = canConfirm,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100))
             ) {
-                Text(if (isUploading) "Đang xử lý..." else "Gửi Yêu Cầu")
+                Text(if (isSubmitting) "Đang xử lý..." else "Gửi yêu cầu")
             }
         },
         dismissButton = {
-            if (!isUploading) {
+            if (!isSubmitting) {
                 TextButton(onClick = onDismiss) { Text("Hủy", color = Color.Gray) }
             }
         }
@@ -998,3 +1053,16 @@ fun ReceiptImageDialog(
 private fun normalizeTimestampMillis(raw: Long): Long {
     return if (raw in 1..9_999_999_999L) raw * 1000L else raw
 }
+
+private fun isReturnEvidenceSizeAllowed(context: Context, uri: Uri): Boolean {
+    val sizeBytes = try {
+        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+            descriptor.length.takeIf { it >= 0L }
+        }
+    } catch (e: Exception) {
+        null
+    }
+    return sizeBytes == null || sizeBytes <= MAX_RETURN_EVIDENCE_SIZE_BYTES
+}
+
+private const val MAX_RETURN_EVIDENCE_SIZE_BYTES = 10L * 1024L * 1024L

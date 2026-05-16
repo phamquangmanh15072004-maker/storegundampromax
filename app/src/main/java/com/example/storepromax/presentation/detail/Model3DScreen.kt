@@ -1,6 +1,7 @@
 package com.example.storepromax.presentation.detail
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
@@ -55,6 +56,7 @@ fun Model3DScreen(
     val engine = rememberEngine()
     val modelLoader = rememberModelLoader(engine)
     val environmentLoader = rememberEnvironmentLoader(engine)
+    val useSafeEnvironment = remember { isLikelyEmulator() }
 
     var environment by remember { mutableStateOf<Environment?>(null) }
     var modelNode by remember { mutableStateOf<ModelNode?>(null) }
@@ -92,10 +94,16 @@ fun Model3DScreen(
         totalBytes = 0L
 
         val envJob = launch {
-            try {
-                environment = environmentLoader.createHDREnvironment(assetFileLocation = "sky_2k.hdr")
-            } catch (e: Exception) {
-                Log.e("Model3D", "Lỗi tải HDR: ${e.message}")
+            environment = if (useSafeEnvironment) {
+                Log.w("Model3D", "Emulator detected, using safe 3D environment")
+                Environment()
+            } else {
+                try {
+                    environmentLoader.createHDREnvironment(assetFileLocation = "sky_2k.hdr") ?: Environment()
+                } catch (e: Exception) {
+                    Log.e("Model3D", "Lỗi tải HDR: ${e.message}", e)
+                    Environment()
+                }
             }
         }
 
@@ -161,14 +169,14 @@ fun Model3DScreen(
                         Text(text = error, color = Color.DarkGray, textAlign = TextAlign.Center, fontWeight = FontWeight.Medium)
                     }
                 }
-                node != null && environment != null -> {
+                node != null -> {
                     Scene(
                         modifier = Modifier.fillMaxSize(),
                         engine = engine,
                         modelLoader = modelLoader,
                         cameraNode = cameraNode,
                         childNodes = listOf(centerNode, node),
-                        environment = environment!!,
+                        environment = environment ?: Environment(),
                         onFrame = { },
                         onGestureListener = rememberOnGestureListener(
                             onDoubleTap = { _, tapNode -> tapNode?.apply { scale *= 1.5f } }
@@ -184,6 +192,29 @@ fun Model3DScreen(
             Icon(Icons.Default.ArrowBack, contentDescription = "Quay lại", tint = Color(0xFF333333))
         }
     }
+}
+
+private fun isLikelyEmulator(): Boolean {
+    val fingerprint = Build.FINGERPRINT.lowercase(Locale.US)
+    val model = Build.MODEL.lowercase(Locale.US)
+    val manufacturer = Build.MANUFACTURER.lowercase(Locale.US)
+    val brand = Build.BRAND.lowercase(Locale.US)
+    val device = Build.DEVICE.lowercase(Locale.US)
+    val product = Build.PRODUCT.lowercase(Locale.US)
+    val hardware = Build.HARDWARE.lowercase(Locale.US)
+
+    return fingerprint.startsWith("generic") ||
+            fingerprint.contains("emulator") ||
+            fingerprint.contains("sdk_gphone") ||
+            model.contains("google_sdk") ||
+            model.contains("emulator") ||
+            model.contains("android sdk built for") ||
+            manufacturer.contains("genymotion") ||
+            hardware.contains("goldfish") ||
+            hardware.contains("ranchu") ||
+            product.contains("sdk") ||
+            product.contains("emulator") ||
+            brand.startsWith("generic") && device.startsWith("generic")
 }
 
 @Composable

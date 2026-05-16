@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
@@ -156,6 +157,7 @@ fun ChatDetailScreen(
     var selectedMessageForOptions by remember { mutableStateOf<ChatMessage?>(null) }
     var expandedMessageId by remember { mutableStateOf<String?>(null) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var showActionTray by remember { mutableStateOf(false) }
     val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val mediaPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
@@ -228,7 +230,6 @@ fun ChatDetailScreen(
                         onUnblock = { viewModel.unblockUser(channelId) }
                     )
                 } else {
-                    EmojiBar(onEmojiClick = { textState += it })
                     if (replyingToMessage != null) {
                         ReplyPreview(
                             message = replyingToMessage!!,
@@ -247,11 +248,15 @@ fun ChatDetailScreen(
                             replyingToMessage = null
                             viewModel.sendMessage(channelId, contentToSend, replyId)
                         },
+                        showActionTray = showActionTray,
+                        onToggleActionTray = { showActionTray = !showActionTray },
                         onAttachClick = {
+                            showActionTray = false
                             mediaPickerLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                             )
-                        }
+                        },
+                        onEmojiClick = { textState += it }
                     )
                 }
             }
@@ -298,7 +303,11 @@ fun ChatDetailScreen(
                             currentUserId = viewModel.currentUserId,
                             showTime = expandedMessageId == item.id,
                             onClick = {
-                                expandedMessageId = if (expandedMessageId == item.id) null else item.id
+                                if (pending.status == PendingMessageStatus.FAILED) {
+                                    viewModel.retryPendingMessage(pending.id)
+                                } else {
+                                    expandedMessageId = if (expandedMessageId == item.id) null else item.id
+                                }
                             },
                             onRetry = { viewModel.retryPendingMessage(pending.id) },
                             onDismissFailed = { viewModel.removePendingMessage(pending.id) }
@@ -560,11 +569,16 @@ fun PendingMessageBubble(
 ) {
     val timeString = remember(message.timestamp) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)) }
     val shape = RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)
+    @Suppress("UNUSED_VARIABLE")
     val statusText = when (message.status) {
         PendingMessageStatus.SENDING -> "Đang gửi..."
         PendingMessageStatus.FAILED -> message.errorMessage.ifBlank { "Gửi lỗi. Nhấn để thử lại." }
     }
     val statusColor = if (message.status == PendingMessageStatus.FAILED) Color(0xFFD32F2F) else Color.Gray
+    val displayStatusText = when (message.status) {
+        PendingMessageStatus.SENDING -> "Đang gửi..."
+        PendingMessageStatus.FAILED -> message.errorMessage.ifBlank { "Gửi thất bại. Nhấn để thử lại." }
+    }
 
     Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
         ReplyBlock(repliedMessage = repliedMessage, currentUserId = currentUserId, isMe = true)
@@ -603,7 +617,7 @@ fun PendingMessageBubble(
                 Spacer(modifier = Modifier.width(8.dp))
             }
             Text(
-                text = statusText,
+                text = displayStatusText,
                 fontSize = 10.sp,
                 color = statusColor,
                 fontWeight = if (message.status == PendingMessageStatus.FAILED) FontWeight.SemiBold else FontWeight.Normal,
@@ -662,6 +676,97 @@ fun ChatInputBar(
         val canSend = text.isNotBlank()
         IconButton(onClick = onSend, enabled = canSend) {
             Icon(Icons.Default.Send, contentDescription = "Gửi", tint = if (canSend) Color(0xFF007AFF) else Color.Gray)
+        }
+    }
+}
+
+@Composable
+fun ChatInputBar(
+    text: String,
+    onTextChange: (String) -> Unit,
+    onSend: () -> Unit,
+    showActionTray: Boolean,
+    onToggleActionTray: () -> Unit,
+    onAttachClick: () -> Unit,
+    onEmojiClick: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (showActionTray) {
+            ChatActionTray(
+                onAttachClick = onAttachClick,
+                onEmojiClick = onEmojiClick
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onToggleActionTray) {
+                Icon(
+                    imageVector = if (showActionTray) Icons.Default.Close else Icons.Default.Add,
+                    contentDescription = if (showActionTray) "Dong tien ich" else "Mo tien ich",
+                    tint = Color(0xFF007AFF)
+                )
+            }
+            TextField(
+                value = text,
+                onValueChange = onTextChange,
+                placeholder = { Text("Nhan tin...", color = Color.Gray, fontSize = 14.sp) },
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedContainerColor = Color(0xFFF0F2F5),
+                    unfocusedContainerColor = Color(0xFFF0F2F5),
+                    cursorColor = Color(0xFF007AFF)
+                ),
+                maxLines = 4,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) onSend() })
+            )
+            val canSend = text.isNotBlank()
+            IconButton(onClick = onSend, enabled = canSend) {
+                Icon(Icons.Default.Send, contentDescription = "Gui", tint = if (canSend) Color(0xFF007AFF) else Color.Gray)
+            }
+        }
+    }
+}
+
+@Composable
+fun ChatActionTray(
+    onAttachClick: () -> Unit,
+    onEmojiClick: (String) -> Unit
+) {
+    val emojis = listOf("👍", "❤️", "😂", "😭", "😡", "🥰", "✅", "👋")
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        item {
+            Surface(
+                modifier = Modifier.size(42.dp).clickable(onClick = onAttachClick),
+                shape = CircleShape,
+                color = Color(0xFFEAF3FF)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Gui anh hoac video", tint = Color(0xFF007AFF))
+                }
+            }
+        }
+        items(emojis) { emoji ->
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFF0F2F5))
+                    .clickable { onEmojiClick(emoji) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = emoji, fontSize = 23.sp)
+            }
         }
     }
 }

@@ -1,7 +1,6 @@
 package com.example.storepromax.presentation.order
 
 import android.content.Context
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -18,8 +17,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -41,6 +38,8 @@ class OrderViewModel @Inject constructor(
     val uiEvent = _uiEvent.receiveAsFlow()
     private val _processingOrderId = MutableStateFlow<String?>(null)
     val processingOrderId = _processingOrderId.asStateFlow()
+    private val _returnUploadProgress = MutableStateFlow<Float?>(null)
+    val returnUploadProgress = _returnUploadProgress.asStateFlow()
 
     val orders: StateFlow<List<Order>> = orderRepository.getOrders()
         .stateIn(
@@ -113,12 +112,26 @@ class OrderViewModel @Inject constructor(
     fun requestReturnRefund(orderId: String, reason: String, description: String, localMediaUris: List<String>, bankBin: String?, bankShortName: String?, accountNumber: String?, accountName: String?, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             _processingOrderId.value = orderId
+            _returnUploadProgress.value = 0f
             try {
-                val cloudUrls = withContext(Dispatchers.IO) {
-                    localMediaUris.map { uriString ->
-                        async { uploadOneMedia(uriString) }
-                    }.awaitAll().filterNotNull()
+                localMediaUris.forEach { uriString ->
+                    validateReturnMediaSize(Uri.parse(uriString))
                 }
+
+                val cloudUrls = withContext(Dispatchers.IO) {
+                    val uploadResults = localMediaUris.mapIndexed { index, uriString ->
+                        uploadOneMedia(uriString) { fileProgress ->
+                            val totalFiles = localMediaUris.size.coerceAtLeast(1)
+                            _returnUploadProgress.value = ((index + fileProgress.coerceIn(0f, 1f)) / totalFiles)
+                                .coerceIn(0f, 0.98f)
+                        }
+                    }
+                    if (uploadResults.any { it.isNullOrBlank() }) {
+                        throw IllegalStateException("Không tải được bằng chứng lên Cloudinary. Vui lòng thử lại.")
+                    }
+                    uploadResults.filterNotNull()
+                }
+                _returnUploadProgress.value = 1f
 
                 if (cloudUrls.isEmpty() && localMediaUris.isNotEmpty()) {
                     onResult(false, "Lỗi tải bằng chứng lên Cloudinary!")
@@ -128,20 +141,18 @@ class OrderViewModel @Inject constructor(
                 orderRepository.requestReturnRefund(orderId, reason, description, cloudUrls, bankBin, bankShortName, accountNumber, accountName)
                 onResult(true, "Gửi yêu cầu thành công!")
             } catch (e: Exception) {
-                onResult(false, "Lỗi: ${e.message}")
+                onResult(false, e.message?.takeIf { it.isNotBlank() } ?: "Không gửi được yêu cầu trả hàng. Vui lòng thử lại.")
             } finally {
                 _processingOrderId.value = null
+                _returnUploadProgress.value = null
             }
         }
     }
 
-    private suspend fun uploadOneMedia(uriString: String): String? {
+    private suspend fun uploadOneMedia(uriString: String, onProgress: (Float) -> Unit): String? {
         val uri = Uri.parse(uriString)
         val mimeType = appContext.contentResolver.getType(uri).orEmpty()
         val isVideo = mimeType.startsWith("video/")
-        if (isVideo) {
-            validateReturnVideoDuration(uri)
-        }
         val resourceType = if (isVideo) "video" else "image"
 
         return suspendCancellableCoroutine { continuation ->
@@ -150,8 +161,13 @@ class OrderViewModel @Inject constructor(
                 .option("resource_type", resourceType)
                 .callback(object : UploadCallback {
                     override fun onStart(requestId: String) {}
-                    override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
+                    override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {
+                        if (totalBytes > 0L) {
+                            onProgress(bytes.toFloat() / totalBytes.toFloat())
+                        }
+                    }
                     override fun onSuccess(requestId: String, resultData: Map<*, *>) {
+                        onProgress(1f)
                         val url = resultData["secure_url"] as? String
                         if (continuation.isActive) continuation.resumeWith(Result.success(url))
                     }
@@ -163,19 +179,17 @@ class OrderViewModel @Inject constructor(
         }
     }
 
-    private fun validateReturnVideoDuration(uri: Uri) {
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(appContext, uri)
-            val durationMs = retriever
-                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                ?.toLongOrNull()
-                ?: 0L
-            if (durationMs > MAX_RETURN_VIDEO_DURATION_MS) {
-                throw IllegalArgumentException("Video bằng chứng chỉ được tối đa 10 giây.")
+    private fun validateReturnMediaSize(uri: Uri) {
+        val sizeBytes = try {
+            appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+                descriptor.length.takeIf { it >= 0L }
             }
-        } finally {
-            retriever.release()
+        } catch (e: Exception) {
+            null
+        }
+
+        if (sizeBytes != null && sizeBytes > MAX_RETURN_MEDIA_SIZE_BYTES) {
+            throw IllegalArgumentException("Bằng chứng không được vượt quá 10MB. Vui lòng chọn ảnh hoặc video dung lượng nhỏ hơn.")
         }
     }
 
@@ -188,4 +202,4 @@ class OrderViewModel @Inject constructor(
     }
 }
 
-private const val MAX_RETURN_VIDEO_DURATION_MS = 10_000L
+private const val MAX_RETURN_MEDIA_SIZE_BYTES = 10L * 1024L * 1024L
