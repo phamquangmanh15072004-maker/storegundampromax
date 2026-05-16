@@ -28,8 +28,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
+import org.json.JSONObject
 import javax.inject.Inject
 import kotlin.coroutines.resume
+
+private class AiBackendException(
+    val httpCode: Int,
+    val errorCode: String,
+    override val message: String
+) : Exception(message)
 
 @HiltViewModel
 class AIChatViewModel @Inject constructor(
@@ -97,6 +104,7 @@ class AIChatViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                ensureAiBackendReady()
                 val (_, allProductsInKho) = fetchRelevantProductsData()
                 val (_, allPosts) = fetchMarketplacePostsData()
                 cachedProductsInKho = allProductsInKho
@@ -286,7 +294,8 @@ class AIChatViewModel @Inject constructor(
         if (!response.isSuccessful) {
             val code = response.code()
             val errorBody = response.errorBody()?.string().orEmpty()
-            throw IllegalStateException("AI backend error HTTP $code $errorBody")
+            val (errorCode, message) = parseBackendError(code, errorBody)
+            throw AiBackendException(code, errorCode, message)
         }
 
         val body = response.body()
@@ -295,6 +304,47 @@ class AIChatViewModel @Inject constructor(
         }
 
         return body.text
+    }
+
+    private suspend fun ensureAiBackendReady() {
+        val response = backendApi.getAiHealth(check = true)
+        if (!response.isSuccessful) {
+            throw AiBackendException(response.code(), "AI_HEALTH_FAILED", "Không kiểm tra được cấu hình GunplaAI.")
+        }
+
+        val health = response.body()
+            ?: throw AiBackendException(response.code(), "AI_HEALTH_EMPTY", "Backend AI không trả về trạng thái cấu hình.")
+
+        if (!health.configured) {
+            throw AiBackendException(503, "AI_NOT_CONFIGURED", "Backend AI chưa được cấu hình.")
+        }
+
+        if (!health.provider.equals("vertex", ignoreCase = true)) {
+            throw AiBackendException(503, "AI_PROVIDER_INVALID", "Backend AI chưa chuyển sang Vertex AI.")
+        }
+
+        if (!health.model.equals("gemini-2.5-flash", ignoreCase = true)) {
+            throw AiBackendException(503, "AI_MODEL_INVALID", "Backend AI chưa dùng model gemini-2.5-flash.")
+        }
+
+        if (health.vertexAuthReady == false) {
+            throw AiBackendException(
+                503,
+                "AI_AUTH_INVALID",
+                health.vertexAuthError ?: "Backend chưa lấy được token Vertex AI."
+            )
+        }
+    }
+
+    private fun parseBackendError(httpCode: Int, errorBody: String): Pair<String, String> {
+        return try {
+            val json = JSONObject(errorBody)
+            val errorCode = json.optString("errorCode").ifBlank { "HTTP_$httpCode" }
+            val message = json.optString("message").ifBlank { "AI backend error HTTP $httpCode" }
+            errorCode to message
+        } catch (_: Exception) {
+            "HTTP_$httpCode" to "AI backend error HTTP $httpCode"
+        }
     }
 
     private suspend fun buildAiMessageFromRawResponse(rawResponse: String): ChatMessageAI {
@@ -418,6 +468,18 @@ class AIChatViewModel @Inject constructor(
     }
 
     private fun friendlyAiError(e: Exception): String {
+        if (e is AiBackendException) {
+            return when (e.errorCode) {
+                "UNAUTHORIZED" -> "Phiên đăng nhập của bạn đã hết hạn. Bạn đăng nhập lại rồi dùng GunplaAI nhé."
+                "IMAGE_TOO_LARGE" -> "Ảnh bạn gửi hơi lớn. Bạn chọn ảnh nhỏ hơn rồi thử lại nhé."
+                "AI_TIMEOUT" -> "GunplaAI phản hồi hơi lâu. Bạn thử gửi lại sau vài giây nhé."
+                "AI_NOT_CONFIGURED", "AI_PROVIDER_INVALID", "AI_MODEL_INVALID", "AI_AUTH_INVALID", "AI_UNAVAILABLE" ->
+                    "GunplaAI backend chưa sẵn sàng hoặc cấu hình Vertex AI chưa đúng. Bạn thử lại sau ít phút nhé."
+                "BAD_REQUEST", "EMPTY_MESSAGE" -> e.message ?: "Nội dung gửi lên GunplaAI chưa hợp lệ."
+                else -> e.message ?: "Hệ thống AI đang gặp sự cố tạm thời. Bạn thử lại sau ít phút nhé."
+            }
+        }
+
         val errorMessage = e.message.orEmpty()
         return when {
             errorMessage.contains("401") || errorMessage.contains("đăng nhập", ignoreCase = true) -> {

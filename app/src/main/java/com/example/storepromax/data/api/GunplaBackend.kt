@@ -5,8 +5,10 @@ import com.example.storepromax.domain.model.PaymentRequest
 import com.example.storepromax.domain.model.PaymentResponse
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.Query
 
 interface GunplaBackendApi {
     @POST("create-payment-link")
@@ -20,6 +22,11 @@ interface GunplaBackendApi {
         @Header("Authorization") authorization: String,
         @Body request: AiChatRequest
     ): Response<AiChatResponse>
+
+    @GET("api/ai/health")
+    suspend fun getAiHealth(
+        @Query("check") check: Boolean = false
+    ): Response<AiHealthResponse>
 }
 
 data class AiChatRequest(
@@ -38,4 +45,16 @@ data class AiChatResponse(
     val text: String? = null,
     val errorCode: String? = null,
     val message: String? = null
+)
+
+data class AiHealthResponse(
+    val success: Boolean = false,
+    val provider: String? = null,
+    val configured: Boolean = false,
+    val vertexConfigured: Boolean = false,
+    val model: String? = null,
+    val vertexLocation: String? = null,
+    val vertexAuthReady: Boolean? = null,
+    val vertexAuthError: String? = null,
+    val warnings: List<String> = emptyList()
 )
