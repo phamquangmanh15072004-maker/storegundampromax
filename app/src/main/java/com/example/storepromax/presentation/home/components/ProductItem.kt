@@ -81,15 +81,14 @@ fun ProductItem(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                     .background(Color(0xFFF8FAFC))
             ) {
                 AsyncImage(
                     model = product.imageUrl,
                     contentDescription = product.name,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(6.dp)
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 )
 
                 if (isOutOfStock) {
