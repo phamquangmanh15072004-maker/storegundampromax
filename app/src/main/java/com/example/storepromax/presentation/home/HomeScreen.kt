@@ -105,14 +105,18 @@ fun HomeScreen(
 
     var headerOffsetHeightPx by remember { mutableFloatStateOf(0f) }
     var pullRefreshDistance by remember { mutableFloatStateOf(0f) }
+    var showHomeTabRefreshIndicator by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         mainViewModel.scrollToTopEvent.collect { targetRoute ->
             if (targetRoute == "home") {
+                showHomeTabRefreshIndicator = true
                 headerOffsetHeightPx = 0f
                 pullRefreshDistance = 0f
                 viewModel.refreshHomeData()
                 gridState.animateScrollToItem(0)
+                delay(700)
+                showHomeTabRefreshIndicator = false
             }
         }
     }
@@ -250,7 +254,9 @@ fun HomeScreen(
                                             key = { product -> "new_${product.id.ifBlank { product.sku.ifBlank { product.name } }}" }
                                         ) { product ->
                                             ProductItem(
-                                                product = product, modifier = Modifier.width(160.dp),
+                                                product = product,
+                                                modifier = Modifier.width(160.dp),
+                                                showAddToCart = false,
                                                 onClick = {
                                                     if (product.id.isNotBlank()) navController.navigate(Screen.Detail.createRoute(product.id))
                                                     else Toast.makeText(context, "Lỗi ID", Toast.LENGTH_SHORT).show()
@@ -324,7 +330,7 @@ fun HomeScreen(
             ) {
                 Column {
                     AnimatedVisibility(
-                        visible = isRefreshing,
+                        visible = isRefreshing || showHomeTabRefreshIndicator,
                         enter = fadeIn() + slideInVertically(),
                         exit = fadeOut() + slideOutVertically()
                     ) {
