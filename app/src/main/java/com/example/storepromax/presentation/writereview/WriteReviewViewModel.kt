@@ -49,6 +49,11 @@ class WriteReviewViewModel @Inject constructor(
                 _isLoading.value = true
                 val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@launch
                 val orderSnapshot = firestore.collection("orders").document(orderId).get().await()
+                val status = orderSnapshot.getString("status").orEmpty()
+                if (!isCompletedOrderStatus(status) && status != "RETURN_REJECTED") {
+                    _productsToReview.value = emptyList()
+                    return@launch
+                }
                 val items = orderSnapshot.get("items") as? List<Map<String, Any>>
 
                 val reviewedProductsInOrder = orderSnapshot.get("reviewedProducts") as? List<String> ?: emptyList()
@@ -146,4 +151,8 @@ class WriteReviewViewModel @Inject constructor(
                 }).dispatch()
         }
     }
+}
+
+private fun isCompletedOrderStatus(status: String): Boolean {
+    return status == "COMPLETED" || status == "DELIVERED"
 }

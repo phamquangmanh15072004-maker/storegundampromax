@@ -58,6 +58,8 @@ data class PaymentPopupData(
     val orderId: String
 )
 
+private const val RETURN_REQUEST_WINDOW_MILLIS = 3L * 24 * 60 * 60 * 1000L
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OrderHistoryScreen(
@@ -86,7 +88,7 @@ fun OrderHistoryScreen(
     val tabTitles = listOf("Tất cả", "Chờ thanh toán", "Chờ xác nhận", "Chờ lấy hàng", "Đang giao", "Hoàn thành", "Chờ xử lý Trả", "Chờ gửi hàng", "Đang hoàn hàng", "Từ chối Trả", "Đã hủy", "Chờ hoàn tiền", "Đã hoàn tiền")
 
     val filteredOrders = remember(allOrders, selectedTabIndex) {
-        if (selectedTabIndex == 0) allOrders else allOrders.filter { it.status == statusCodes[selectedTabIndex] }
+        if (selectedTabIndex == 0) allOrders else allOrders.filter { orderMatchesStatusTab(it.status, statusCodes[selectedTabIndex]) }
     }
 
     LaunchedEffect(Unit) {
@@ -125,7 +127,7 @@ fun OrderHistoryScreen(
                 }
             ) {
                 tabTitles.forEachIndexed { index, title ->
-                    val count = if (index == 0) allOrders.size else allOrders.count { it.status == statusCodes[index] }
+                    val count = if (index == 0) allOrders.size else allOrders.count { orderMatchesStatusTab(it.status, statusCodes[index]) }
                     val isSelected = selectedTabIndex == index
                     Tab(
                         selected = isSelected,
@@ -291,7 +293,7 @@ fun OrderItem(
         "PENDING" -> Triple("Chờ xác nhận", Color(0xFFE65100), Color(0xFFFFE0B2))
         "CONFIRMED" -> Triple("Chờ lấy hàng", Color(0xFF5E35B1), Color(0xFFE1BEE7))
         "SHIPPING" -> Triple("Đang giao", Color(0xFF0277BD), Color(0xFFB3E5FC))
-        "COMPLETED" -> Triple("Hoàn thành", Color(0xFF2E7D32), Color(0xFFC8E6C9))
+        "COMPLETED", "DELIVERED" -> Triple("Hoàn thành", Color(0xFF2E7D32), Color(0xFFC8E6C9))
         "RETURN_PENDING" -> Triple("Chờ xử lý Trả", Color(0xFFD84315), Color(0xFFFFE0B2))
         "RETURN_APPROVED" -> Triple("Chờ gửi hàng trả", Color(0xFF1565C0), Color(0xFFBBDEFB))
         "RETURNING" -> Triple("Đang hoàn hàng", Color(0xFF00838F), Color(0xFFB2EBF2))
@@ -444,20 +446,17 @@ fun OrderItem(
                     }
                 }
 
-                // 🌟 ĐÃ KHÔI PHỤC NÚT ĐÁNH GIÁ/YÊU CẦU TRẢ HÀNG 3 NGÀY KHI ĐƠN COMPLETED
-                if (order.status == "COMPLETED" || order.status == "RETURN_REJECTED") {
-                    val threeDaysInMillis = 3L * 24 * 60 * 60 * 1000
-                    val isWithinReturnPeriod = (System.currentTimeMillis() - order.updatedAt) <= threeDaysInMillis
-                    val hasReviewed = order.reviewedProducts.isNotEmpty()
-                    val canRequestReturn = order.status == "COMPLETED" && isWithinReturnPeriod
-
+                val hasReviewed = order.reviewedProducts.isNotEmpty()
+                val canReview = canReviewOrder(order)
+                val canRequestReturn = canRequestReturnOrder(order)
+                if (hasReviewed || canReview || canRequestReturn) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         if (hasReviewed) {
                             OutlinedButton(onClick = { }, enabled = false, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color.LightGray), colors = ButtonDefaults.outlinedButtonColors(disabledContentColor = Color.Gray), modifier = Modifier.height(40.dp)) {
                                 Text("Đã đánh giá", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                             }
-                        } else {
+                        } else if (canReview) {
                             Button(onClick = onReviewClick, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)), modifier = Modifier.height(40.dp)) {
                                 Text("Đánh giá", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                             }
@@ -1057,6 +1056,32 @@ fun ReceiptImageDialog(
 
 private fun normalizeTimestampMillis(raw: Long): Long {
     return if (raw in 1..9_999_999_999L) raw * 1000L else raw
+}
+
+private fun isWithinReturnPeriod(order: Order): Boolean {
+    return (System.currentTimeMillis() - normalizeTimestampMillis(order.updatedAt)) <= RETURN_REQUEST_WINDOW_MILLIS
+}
+
+private fun canReviewOrder(order: Order): Boolean {
+    return isCompletedOrderStatus(order.status) || order.status == "RETURN_REJECTED"
+}
+
+private fun canRequestReturnOrder(order: Order): Boolean {
+    return isCompletedOrderStatus(order.status) &&
+        order.reviewedProducts.isEmpty() &&
+        isWithinReturnPeriod(order)
+}
+
+private fun isCompletedOrderStatus(status: String): Boolean {
+    return status == "COMPLETED" || status == "DELIVERED"
+}
+
+private fun orderMatchesStatusTab(orderStatus: String, tabStatus: String): Boolean {
+    return if (tabStatus == "COMPLETED") {
+        isCompletedOrderStatus(orderStatus)
+    } else {
+        orderStatus == tabStatus
+    }
 }
 
 private fun isReturnEvidenceSizeAllowed(context: Context, uri: Uri): Boolean {

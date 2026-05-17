@@ -112,7 +112,7 @@ class MyReviewViewModel @Inject constructor(
                 isLoadingUnreviewed.value = true
                 val snapshot = firestore.collection("orders")
                     .whereEqualTo("userId", userId)
-                    .whereIn("status", listOf("COMPLETED", "RETURN_REJECTED"))
+                    .whereIn("status", listOf("COMPLETED", "DELIVERED", "RETURN_REJECTED"))
                     .get()
                     .await()
 

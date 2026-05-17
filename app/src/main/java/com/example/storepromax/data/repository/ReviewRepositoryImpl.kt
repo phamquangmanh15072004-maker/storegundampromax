@@ -53,18 +53,19 @@ class ReviewRepositoryImpl @Inject constructor(
         val userId = currentUser.uid
         if (orderId != null && parentId == null) {
             val orderRef = firestore.collection("orders").document(orderId)
-            val orderSnap = orderRef.get().await()
-            if (!orderSnap.exists()) throw Exception("Không tìm thấy thông tin đơn hàng!")
-            val status = orderSnap.getString("status") ?: ""
-            if (status != "COMPLETED" && status != "RETURN_REJECTED") {
-                throw Exception("Đơn hàng đang xử lý khiếu nại hoặc đã hoàn tiền. Bạn không thể đánh giá!")
-            }
-            val reviewedProducts = orderSnap.get("reviewedProducts") as? List<String> ?: emptyList()
-            if (reviewedProducts.contains(productId)) {
-                throw Exception("Bạn đã đánh giá sản phẩm này rồi!")
-            }
-            val newReviewedList = reviewedProducts + productId
-            orderRef.update("reviewedProducts", newReviewedList).await()
+            firestore.runTransaction { transaction ->
+                val orderSnap = transaction.get(orderRef)
+                if (!orderSnap.exists()) throw Exception("Không tìm thấy thông tin đơn hàng!")
+                val status = orderSnap.getString("status") ?: ""
+                if (!isCompletedOrderStatus(status) && status != "RETURN_REJECTED") {
+                    throw Exception("Đơn hàng đang xử lý khiếu nại hoặc đã hoàn tiền. Bạn không thể đánh giá!")
+                }
+                val reviewedProducts = orderSnap.get("reviewedProducts") as? List<String> ?: emptyList()
+                if (reviewedProducts.contains(productId)) {
+                    throw Exception("Bạn đã đánh giá sản phẩm này rồi!")
+                }
+                transaction.update(orderRef, "reviewedProducts", reviewedProducts + productId)
+            }.await()
         }
         val reviewRef = firestore.collection("products").document(productId)
             .collection("reviews").document()
@@ -161,4 +162,8 @@ class ReviewRepositoryImpl @Inject constructor(
             e.printStackTrace()
         }
     }
+}
+
+private fun isCompletedOrderStatus(status: String): Boolean {
+    return status == "COMPLETED" || status == "DELIVERED"
 }

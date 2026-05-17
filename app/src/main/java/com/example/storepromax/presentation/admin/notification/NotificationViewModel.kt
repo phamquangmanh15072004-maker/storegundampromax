@@ -76,7 +76,7 @@ class NotificationViewModel @Inject constructor(
                     return@launch
                 }
                 val status = snapshot.getString("status") ?: ""
-                if (status == "COMPLETED" || status == "RETURN_REJECTED") {
+                if (status == "COMPLETED" || status == "DELIVERED" || status == "RETURN_REJECTED") {
                     onResult(true, "")
                 } else {
                     onResult(false, "Đơn hàng đang xử lý hoàn trả/khiếu nại. Không thể đánh giá!")

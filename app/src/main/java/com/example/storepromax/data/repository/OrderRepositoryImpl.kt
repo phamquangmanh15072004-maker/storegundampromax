@@ -378,36 +378,53 @@ class OrderRepositoryImpl @Inject constructor(
         accountName: String?
     ) {
         withContext(Dispatchers.IO) {
-            val batch = firestore.batch()
-
             val orderRef = firestore.collection("orders").document(orderId)
-            val updates = mutableMapOf<String, Any>(
-                "status" to "RETURN_PENDING",
-                "returnReason" to reason,
-                "returnDescription" to description,
-                "returnImages" to images,
-                "updatedAt" to System.currentTimeMillis()
-            )
-            bankBin?.let { updates["refundBankBin"] = it }
-            bankShortName?.let { updates["refundBankShortName"] = it }
-            accountNumber?.let { updates["refundAccountNumber"] = it }
-            accountName?.let { updates["refundAccountName"] = it }
-
-            batch.update(orderRef, updates)
-
             val notifRef = firestore.collection("notifications").document()
-            val notifData = hashMapOf(
-                "title" to "Yeu cau tra hang moi",
-                "message" to "Don hang #${orderId.takeLast(6).uppercase()} vua co yeu cau tra hang. Ly do: $reason",
-                "type" to "RETURN_REQUEST",
-                "targetId" to orderId,
-                "targetRoles" to listOf("ADMIN"),
-                "readBy" to emptyList<String>(),
-                "createdAt" to System.currentTimeMillis()
-            )
-            batch.set(notifRef, notifData)
 
-            batch.commit().await()
+            firestore.runTransaction { transaction ->
+                val orderSnap = transaction.get(orderRef)
+                if (!orderSnap.exists()) {
+                    throw IllegalStateException("Không tìm thấy thông tin đơn hàng!")
+                }
+                val status = orderSnap.getString("status").orEmpty()
+                if (!isCompletedOrderStatus(status)) {
+                    throw IllegalStateException("Chỉ đơn hàng đã hoàn thành mới được yêu cầu trả hàng.")
+                }
+                val reviewedProducts = orderSnap.get("reviewedProducts") as? List<String> ?: emptyList()
+                if (reviewedProducts.isNotEmpty()) {
+                    throw IllegalStateException("Đơn hàng đã có đánh giá nên không thể yêu cầu trả hàng/hoàn tiền.")
+                }
+                val updatedAt = normalizeTimestampMillis(orderSnap.getLong("updatedAt") ?: 0L)
+                if (updatedAt <= 0L || System.currentTimeMillis() - updatedAt > RETURN_REQUEST_WINDOW_MILLIS) {
+                    throw IllegalStateException("Đơn hàng đã quá thời hạn 3 ngày để yêu cầu trả hàng/hoàn tiền.")
+                }
+
+                val now = System.currentTimeMillis()
+                val updates = mutableMapOf<String, Any>(
+                    "status" to "RETURN_PENDING",
+                    "returnReason" to reason,
+                    "returnDescription" to description,
+                    "returnImages" to images,
+                    "updatedAt" to now
+                )
+                bankBin?.let { updates["refundBankBin"] = it }
+                bankShortName?.let { updates["refundBankShortName"] = it }
+                accountNumber?.let { updates["refundAccountNumber"] = it }
+                accountName?.let { updates["refundAccountName"] = it }
+
+                val notifData = hashMapOf(
+                    "title" to "Yeu cau tra hang moi",
+                    "message" to "Don hang #${orderId.takeLast(6).uppercase()} vua co yeu cau tra hang. Ly do: $reason",
+                    "type" to "RETURN_REQUEST",
+                    "targetId" to orderId,
+                    "targetRoles" to listOf("ADMIN"),
+                    "readBy" to emptyList<String>(),
+                    "createdAt" to now
+                )
+
+                transaction.update(orderRef, updates)
+                transaction.set(notifRef, notifData)
+            }.await()
         }
     }
 
@@ -443,4 +460,14 @@ class OrderRepositoryImpl @Inject constructor(
             }
         }
     }
+}
+
+private const val RETURN_REQUEST_WINDOW_MILLIS = 3L * 24L * 60L * 60L * 1000L
+
+private fun normalizeTimestampMillis(raw: Long): Long {
+    return if (raw in 1..9_999_999_999L) raw * 1000L else raw
+}
+
+private fun isCompletedOrderStatus(status: String): Boolean {
+    return status == "COMPLETED" || status == "DELIVERED"
 }

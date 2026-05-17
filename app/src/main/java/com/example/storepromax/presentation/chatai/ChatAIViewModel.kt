@@ -155,7 +155,7 @@ class AIChatViewModel @Inject constructor(
 
                 if (loadedMessages.isEmpty()) {
                     val welcomeMsg = ChatMessageAI(
-                        content = "Chào bạn! Mình là GunplaAI, trợ lý tư vấn Gunpla của cửa hàng. Bạn muốn tìm kit theo grade, ngân sách, độ khó lắp hay cần kiểm tra đơn hàng thì nhắn mình nhé.",
+                        content = "Chào bạn! Mình là GunplaAI, trợ lý tư vấn Gunpla của Gunpla Hub. Bạn muốn tìm kit theo grade, ngân sách, độ khó lắp hay cần kiểm tra đơn hàng thì nhắn mình nhé.",
                         isFromUser = false
                     )
                     _messages.value = listOf(welcomeMsg)
