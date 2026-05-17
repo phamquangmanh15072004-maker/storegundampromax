@@ -144,6 +144,7 @@ fun ProductItem(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(128.dp)
                     .padding(12.dp)
             ) {
                 Text(
@@ -180,7 +181,7 @@ fun ProductItem(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.weight(1f))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.Bottom,

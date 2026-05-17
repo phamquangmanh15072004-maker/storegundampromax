@@ -44,7 +44,16 @@ val AlertRed = Color(0xFFFF3B30)
 val SuccessGreen = Color(0xFF00C853)
 val TealFreeship = Color(0xFF00BFA5)
 
-data class PaymentPopupData(val url: String, val bin: String, val accNo: String, val amount: Long, val description: String, val orderId: String)
+data class PaymentPopupData(
+    val url: String,
+    val bin: String,
+    val accNo: String,
+    val amount: Long,
+    val description: String,
+    val orderId: String,
+    val orderShortCode: String,
+    val itemSummary: String
+)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CheckoutScreen(
@@ -75,7 +84,7 @@ fun CheckoutScreen(
 
     val paymentMethod by viewModel.paymentMethod.collectAsState()
     val shippingMethod by viewModel.shippingMethod.collectAsState()
-    val bankingEnabled = finalTotal > 0L
+    val bankingEnabled = finalTotal >= CheckoutViewModel.MIN_BANKING_AMOUNT
 
     val availableVouchers by viewModel.availableVouchers.collectAsState()
     val selectedDiscountVoucher by viewModel.selectedDiscountVoucher.collectAsState()
@@ -112,7 +121,7 @@ fun CheckoutScreen(
     }
 
     LaunchedEffect(finalTotal, paymentMethod) {
-        if (finalTotal <= 0L && paymentMethod == "BANKING") {
+        if (finalTotal < CheckoutViewModel.MIN_BANKING_AMOUNT && paymentMethod == "BANKING") {
             viewModel.onPaymentMethodChange("COD")
         }
     }
@@ -159,8 +168,8 @@ fun CheckoutScreen(
                         onClick = {
                             viewModel.submitOrder(
                                 onSuccess = { showSuccessDialog = true },
-                                onShowPaymentPopup = { url, bin, accNo, description, orderId ->
-                                    paymentPopupData = PaymentPopupData(url, bin, accNo, finalTotal, description, orderId)
+                                onShowPaymentPopup = { url, bin, accNo, description, orderId, orderShortCode, itemSummary ->
+                                    paymentPopupData = PaymentPopupData(url, bin, accNo, finalTotal, description, orderId, orderShortCode, itemSummary)
                                 }
                             )
                         },
@@ -249,7 +258,7 @@ fun CheckoutScreen(
                     PaymentOptionItem("Thanh toán khi nhận hàng (COD)", Icons.Default.Money, paymentMethod == "COD") { viewModel.onPaymentMethodChange("COD") }
                     Spacer(Modifier.height(8.dp))
                     PaymentOptionItem(
-                        title = if (bankingEnabled) "Chuyển khoản an toàn qua PayOS" else "Chuyển khoản PayOS (không áp dụng cho đơn 0đ)",
+                        title = if (bankingEnabled) "Chuyển khoản an toàn qua PayOS" else "Chuyển khoản PayOS (chỉ áp dụng từ ₫${DecimalFormat("#,###").format(CheckoutViewModel.MIN_BANKING_AMOUNT)})",
                         icon = Icons.Default.QrCode,
                         selected = paymentMethod == "BANKING",
                         enabled = bankingEnabled
@@ -422,6 +431,12 @@ fun HybridQRPaymentDialog(
                     )
                 }
                 Text("Số tiền: ₫${DecimalFormat("#,###").format(data.amount)}", color = AlertRed, fontWeight = FontWeight.Black, fontSize = 22.sp)
+
+                Text("Mã đơn: #${data.orderShortCode}", color = GunplaBlue, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("Nội dung CK: ${data.description}", color = Color.DarkGray, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                if (data.itemSummary.isNotBlank()) {
+                    Text("Sản phẩm: ${data.itemSummary}", color = Color.Gray, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
 
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider(color = Color(0xFFEEEEEE))

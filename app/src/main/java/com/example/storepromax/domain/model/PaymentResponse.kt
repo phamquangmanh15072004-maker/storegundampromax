@@ -10,5 +10,7 @@ data class PaymentResponse(
     val bin: String?,
     val accountNumber: String?,
     val checkoutUrl: String?,
-    val description: String?
+    val description: String?,
+    val orderShortCode: String? = null,
+    val itemSummary: String? = null
 )

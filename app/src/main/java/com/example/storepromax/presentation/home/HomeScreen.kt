@@ -109,8 +109,10 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         mainViewModel.scrollToTopEvent.collect { targetRoute ->
             if (targetRoute == "home") {
-                gridState.animateScrollToItem(0)
                 headerOffsetHeightPx = 0f
+                pullRefreshDistance = 0f
+                viewModel.refreshHomeData()
+                gridState.animateScrollToItem(0)
             }
         }
     }
@@ -170,7 +172,7 @@ fun HomeScreen(
                 }
 
                 override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                    if (source == NestedScrollSource.Drag && available.y > 0) {
+                    if (source == NestedScrollSource.UserInput && available.y > 0) {
                         if (gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0) {
                             pullRefreshDistance += available.y
                             if (pullRefreshDistance > 150f && !viewModel.isRefreshing.value) {
@@ -243,7 +245,10 @@ fun HomeScreen(
                                     if (isLoading && newArrivals.isEmpty()) {
                                         items(3) { Box(modifier = Modifier.width(160.dp)) { ShimmerProductItem() } }
                                     } else {
-                                        itemsIndexed(items = newArrivals, key = { index, product -> "new_${product.id}_$index" }) { _, product ->
+                                        items(
+                                            items = newArrivals,
+                                            key = { product -> "new_${product.id.ifBlank { product.sku.ifBlank { product.name } }}" }
+                                        ) { product ->
                                             ProductItem(
                                                 product = product, modifier = Modifier.width(160.dp),
                                                 onClick = {
@@ -284,7 +289,10 @@ fun HomeScreen(
                 } else if (productList.isEmpty()) {
                     item(span = { GridItemSpan(2) }) { EmptyStateMessage() }
                 } else {
-                    itemsIndexed(items = productList, key = { index, product -> "grid_${product.id}_$index" }) { index, product ->
+                    itemsIndexed(
+                        items = productList,
+                        key = { _, product -> "grid_${product.id.ifBlank { product.sku.ifBlank { product.name } }}" }
+                    ) { index, product ->
                         Box(modifier = Modifier.fillMaxWidth().padding(start = if (index % 2 == 0) 16.dp else 0.dp, end = if (index % 2 == 1) 16.dp else 0.dp)) {
                             ProductItem(
                                 product = product, modifier = Modifier.fillMaxWidth(),
@@ -653,7 +661,7 @@ fun SectionTitle(title: String) { Text(title.uppercase(), fontSize = 16.sp, font
 
 @Composable
 fun CategorySection(selected: String, onSelected: (String) -> Unit) {
-    val cats = listOf("All", "3D Model", "HG", "RG", "MG", "PG", "Tools")
+    val cats = listOf("All", "3D Model", "HG", "RG", "MG", "PG", "SD", "ACCESSORY", "TOOL", "Khác")
     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(cats) { cat -> CategoryChip(cat, cat == selected) { onSelected(cat) } }
     }
@@ -664,7 +672,13 @@ fun CategoryChip(text: String, isSelected: Boolean, onClick: () -> Unit) {
     Surface(modifier = Modifier.clickable { onClick() }.height(40.dp), shape = RoundedCornerShape(20.dp), color = if (isSelected) GunplaBlue else Color.White, border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) GunplaBlue else Color(0xFFE0E0E0))) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp)) {
             if (text == "3D Model") { Icon(Icons.Default.ViewInAr, null, tint = if (isSelected) Color.White else Color.Gray, modifier = Modifier.size(16.dp)); Spacer(modifier = Modifier.width(6.dp)) }
-            Text(text, color = if (isSelected) Color.White else Color.Gray, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, fontSize = 14.sp)
+            val label = when (text) {
+                "All" -> "Tất cả"
+                "TOOL" -> "Tools"
+                "ACCESSORY" -> "Phụ kiện"
+                else -> text
+            }
+            Text(label, color = if (isSelected) Color.White else Color.Gray, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, fontSize = 14.sp)
         }
     }
 }

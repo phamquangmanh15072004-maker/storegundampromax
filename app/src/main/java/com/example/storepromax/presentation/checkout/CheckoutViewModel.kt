@@ -1,4 +1,4 @@
-package com.example.storepromax.presentation.checkout
+﻿package com.example.storepromax.presentation.checkout
 
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -153,7 +153,7 @@ class CheckoutViewModel @Inject constructor(
         } catch (e: Exception) { e.printStackTrace() }
     }
 
-    fun cancelOrderFromPopup(orderId: String, reason: String = "Khách hàng hủy từ màn hình thanh toán") {
+    fun cancelOrderFromPopup(orderId: String, reason: String = "KhÃ¡ch hÃ ng há»§y tá»« mÃ n hÃ¬nh thanh toÃ¡n") {
         viewModelScope.launch {
             paymentListenerJob?.cancel()
             orderRepository.cancelOrder(
@@ -165,7 +165,7 @@ class CheckoutViewModel @Inject constructor(
                 accountNumber = null,
                 accountName = null
             )
-            _uiEvent.send("Đã hủy đơn hàng để đặt lại!")
+            _uiEvent.send("ÄÃ£ há»§y Ä‘Æ¡n hÃ ng Ä‘á»ƒ Ä‘áº·t láº¡i!")
         }
     }
 
@@ -293,43 +293,43 @@ class CheckoutViewModel @Inject constructor(
             voucherRepository.getVoucherByCode(code.uppercase().trim()).onSuccess { voucher ->
                 val currentTime = System.currentTimeMillis()
                 if (voucher.startDate > currentTime) {
-                    onResult(false, "Voucher này chưa đến giờ sử dụng!")
+                    onResult(false, "Voucher nÃ y chÆ°a Ä‘áº¿n giá» sá»­ dá»¥ng!")
                 }
                 else if (voucher.expirationDate < currentTime && voucher.expirationDate > 0L) {
-                    onResult(false, "Voucher này đã hết hạn!")
+                    onResult(false, "Voucher nÃ y Ä‘Ã£ háº¿t háº¡n!")
                 }
                 else if (totalPrice.value < voucher.minOrderValue) {
-                    onResult(false, "Đơn hàng chưa đạt mức tối thiểu")
+                    onResult(false, "ÄÆ¡n hÃ ng chÆ°a Ä‘áº¡t má»©c tá»‘i thiá»ƒu")
                 }
                 else if (voucher.usageLimit > 0 && voucher.usedCount >= voucher.usageLimit) {
-                    onResult(false, "Mã đã hết lượt")
+                    onResult(false, "MÃ£ Ä‘Ã£ háº¿t lÆ°á»£t")
                 }
                 else if (!voucher.isActive) {
-                    onResult(false, "Mã này đã bị vô hiệu hóa")
+                    onResult(false, "MÃ£ nÃ y Ä‘Ã£ bá»‹ vÃ´ hiá»‡u hÃ³a")
                 }
                 else {
                     toggleVoucher(voucher)
-                    onResult(true, "Áp dụng thành công!")
+                    onResult(true, "Ãp dá»¥ng thÃ nh cÃ´ng!")
                 }
-            }.onFailure { onResult(false, "Mã không hợp lệ") }
+            }.onFailure { onResult(false, "MÃ£ khÃ´ng há»£p lá»‡") }
         }
     }
 
-    fun submitOrder(onSuccess: () -> Unit, onShowPaymentPopup: (String, String, String, String, String) -> Unit) {
+    fun submitOrder(onSuccess: () -> Unit, onShowPaymentPopup: (String, String, String, String, String, String, String) -> Unit) {
         if (_isProcessing.value) return
         val userId = auth.currentUser?.uid ?: ""
         val address = getFullAddress()
         if (name.value.isBlank() || phone.value.isBlank() || selectedProvince.value == null || selectedDistrict.value == null || selectedWard.value == null || specificAddress.value.isBlank()) {
-            viewModelScope.launch { _uiEvent.send("Vui lòng chọn đầy đủ địa chỉ giao hàng!") }
+            viewModelScope.launch { _uiEvent.send("Vui lÃ²ng chá»n Ä‘áº§y Ä‘á»§ Ä‘á»‹a chá»‰ giao hÃ ng!") }
             return
         }
         _isProcessing.value = true
         viewModelScope.launch {
             _isProcessing.value = true
             val finalTotal = finalTotalPrice.value
-            if (finalTotal <= 0L && paymentMethod.value == "BANKING") {
+            if (finalTotal < MIN_BANKING_AMOUNT && paymentMethod.value == "BANKING") {
                 paymentMethod.value = "COD"
-                _uiEvent.send("Đơn hàng 0đ chỉ hỗ trợ thanh toán COD.")
+                _uiEvent.send("ÄÆ¡n hÃ ng dÆ°á»›i ${MIN_BANKING_AMOUNT}Ä‘ chá»‰ há»— trá»£ thanh toÃ¡n COD.")
                 _isProcessing.value = false
                 return@launch
             }
@@ -371,27 +371,29 @@ class CheckoutViewModel @Inject constructor(
                             val body = response.body()!!
                             onShowPaymentPopup(
                                 body.checkoutUrl ?: "", body.bin ?: "", body.accountNumber ?: "",
-                                body.description ?: "", savedOrderId
+                                body.description ?: "", savedOrderId,
+                                body.orderShortCode ?: savedOrderId.takeLast(6).uppercase(),
+                                body.itemSummary ?: _displayItems.value.joinToString(", ") { "${it.product.name} x${it.quantity}" }
                             )
                             listenToOrderPaymentStatus(savedOrderId, finalTotal.toDouble())
                         } else {
                             val errorMsg = response.errorBody()?.string() ?: response.message()
                             runCatching { orderRepository.cancelOrder(savedOrderId, "Khong tao duoc link thanh toan: $errorMsg", false, null, null, null, null) }
-                            _uiEvent.send("Server PayOS từ chối: $errorMsg")
+                            _uiEvent.send("Server PayOS tá»« chá»‘i: $errorMsg")
                         }
                     } catch (e: TimeoutCancellationException) {
                         runCatching { orderRepository.cancelOrder(savedOrderId, "Timeout khi tao link thanh toan", false, null, null, null, null) }
-                        _uiEvent.send("Mạng đang chậm nên chưa tải được mã QR thanh toán. Đơn đã được hoàn lại, bạn thử đặt lại sau ít giây nhé.")
+                        _uiEvent.send("Máº¡ng Ä‘ang cháº­m nÃªn chÆ°a táº£i Ä‘Æ°á»£c mÃ£ QR thanh toÃ¡n. ÄÆ¡n Ä‘Ã£ Ä‘Æ°á»£c hoÃ n láº¡i, báº¡n thá»­ Ä‘áº·t láº¡i sau Ã­t giÃ¢y nhÃ©.")
                     } catch (e: Exception){
                         runCatching { orderRepository.cancelOrder(savedOrderId, "Loi ket noi server thanh toan: ${e.message}", false, null, null, null, null) }
-                        _uiEvent.send("Lỗi kết nối Server thanh toán: ${e.message}")
+                        _uiEvent.send("Lá»—i káº¿t ná»‘i Server thanh toÃ¡n: ${e.message}")
                     }
                 } else {
                     notificationRepository.sendOrderNotificationToAdmin(savedOrderId, finalTotal.toDouble())
                     onSuccess()
                 }
             }.onFailure { error ->
-                _uiEvent.send(error.message ?: "Có lỗi xảy ra, vui lòng thử lại!")
+                _uiEvent.send(error.message ?: "CÃ³ lá»—i xáº£y ra, vui lÃ²ng thá»­ láº¡i!")
             }
             _isProcessing.value = false
         }
@@ -412,7 +414,7 @@ class CheckoutViewModel @Inject constructor(
                 try {
                     firestore.collection("users").document(userId).update(updates)
                 } catch (e: Exception) {
-                    Log.e("Checkout", "Không thể cập nhật hồ sơ: ${e.message}")
+                    Log.e("Checkout", "KhÃ´ng thá»ƒ cáº­p nháº­t há»“ sÆ¡: ${e.message}")
                 }
             }
         }
@@ -433,9 +435,9 @@ class CheckoutViewModel @Inject constructor(
     fun onNameChange(v: String) { name.value = v }
     fun onPhoneChange(v: String) { phone.value = v }
     fun onPaymentMethodChange(v: String) {
-        if (v == "BANKING" && finalTotalPrice.value <= 0L) {
+        if (v == "BANKING" && finalTotalPrice.value < MIN_BANKING_AMOUNT) {
             paymentMethod.value = "COD"
-            viewModelScope.launch { _uiEvent.send("Đơn hàng 0đ chỉ hỗ trợ thanh toán COD.") }
+            viewModelScope.launch { _uiEvent.send("Đơn hàng dưới ${MIN_BANKING_AMOUNT}đ chỉ hỗ trợ thanh toán COD.") }
             return
         }
         paymentMethod.value = v
@@ -444,6 +446,7 @@ class CheckoutViewModel @Inject constructor(
 
     companion object {
         private const val PAYMENT_LINK_TIMEOUT_MS = 20_000L
+        const val MIN_BANKING_AMOUNT = 10_000L
     }
 
     private suspend fun loadUserProfile() {
